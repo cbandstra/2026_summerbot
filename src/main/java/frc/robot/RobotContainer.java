@@ -74,14 +74,14 @@ public class RobotContainer {
   private final SlewRateLimiter m_rotLimiter = new SlewRateLimiter(3.0);
 
   /*
-   * Field-centric driving. Translation deadband/floor are computed manually each loop in
-   * computeTranslationVelocity() (see below) since CTRE's built-in deadband can only zero small
-   * inputs, not enforce a minimum nonzero output - so translation deadband is disabled here.
-   * Rotation still uses the built-in deadband since it has no floor requirement.
+   * Field-centric driving. Translation and rotation deadband/curve shaping are both computed
+   * manually each loop (see computeTranslationVelocity() and computeManualRotationalRate()
+   * below) since CTRE's built-in deadband can only zero small inputs - it can't apply a response
+   * curve above the deadband, which rotation now needs too. Both are disabled here.
    */
   private final SwerveRequest.FieldCentric drive = new SwerveRequest.FieldCentric()
       .withDeadband(0)
-      .withRotationalDeadband(MaxAngularRate * OperatorConstants.kRotationDeadband)
+      .withRotationalDeadband(0)
       .withDriveRequestType(DriveRequestType.OpenLoopVoltage);
   private final SwerveRequest.SwerveDriveBrake brake = new SwerveRequest.SwerveDriveBrake();
 
@@ -112,7 +112,7 @@ public class RobotContainer {
             double[] translation = computeTranslationVelocity(maxSpeed);
             return drive.withVelocityX(translation[0])
                 .withVelocityY(translation[1])
-                .withRotationalRate(-m_rotLimiter.calculate(m_driverController.getRawAxis(OperatorConstants.kThrustmasterTwistAxis)) * MaxAngularRate); // CCW is stick twisted left (negative twist)
+                .withRotationalRate(computeManualRotationalRate());
         })
     );
 
@@ -129,15 +129,16 @@ public class RobotContainer {
 
     // Hold button 2 (thumb button) to auto-rotate toward the best-seen AprilTag while
     // driving/strafing normally - translation still comes straight from the stick (see
-    // computeTranslationVelocity), only rotation is overridden. If no tag is visible,
-    // rotationalRate stays 0 (normal manual driving, no auto-rotation).
+    // computeTranslationVelocity), only rotation is overridden. If no tag is visible, rotation
+    // falls back to the twist stick (same as normal manual driving) so the driver isn't locked
+    // out of rotating while searching for a tag to align to.
     m_driverController.button(OperatorConstants.kThrustmasterThumbButton).whileTrue(
         Commands.startRun(
             () -> m_alignRotationController.reset(),
             () -> {
                 double maxSpeed = kMaxSpeedMps * throttleSpeedPercent();
                 double[] translation = computeTranslationVelocity(maxSpeed);
-                double rotationalRate = 0.0;
+                double rotationalRate;
                 if (vision.hasTarget()) {
                     // Confirmed on the robot: this camera/mount needs the raw (non-negated) yaw
                     // here to turn toward the target rather than away from it.
@@ -145,6 +146,8 @@ public class RobotContainer {
                         m_alignRotationController.calculate(vision.getTargetYawDegrees(), 0.0),
                         -MaxAngularRate, MaxAngularRate
                     );
+                } else {
+                    rotationalRate = computeManualRotationalRate();
                 }
                 drivetrain.setControl(drive.withVelocityX(translation[0])
                     .withVelocityY(translation[1])
@@ -168,6 +171,29 @@ public class RobotContainer {
     double t = (1.0 - axis) / 2.0; // -1 -> 1 (max), +1 -> 0 (min)
     return OperatorConstants.kSliderMinSpeedPercent
         + t * (OperatorConstants.kSliderMaxSpeedPercent - OperatorConstants.kSliderMinSpeedPercent);
+  }
+
+  /**
+   * Reads the twist axis, applies input smoothing, and returns a rotational rate in rad/s -
+   * the manual rotation control used both for normal driving and as the align command's
+   * fallback when no tag is visible to auto-rotate toward. Mirrors
+   * computeTranslationVelocity()'s deadband + curve shaping (see there for the full rationale):
+   * below {@link OperatorConstants#kRotationDeadband}, output is zero; above it, the response is
+   * raised to {@link OperatorConstants#kRotationCurveExponent} so small twists produce
+   * proportionally less rotation than a linear mapping would, while full deflection still
+   * reaches {@code MaxAngularRate}.
+   */
+  private double computeManualRotationalRate() {
+    double stickTwist = -m_rotLimiter.calculate(m_driverController.getRawAxis(OperatorConstants.kThrustmasterTwistAxis)); // CCW is stick twisted left (negative twist)
+    double stickMagnitude = Math.abs(stickTwist);
+
+    if (stickMagnitude < OperatorConstants.kRotationDeadband) {
+        return 0.0;
+    }
+
+    double stickFraction = Math.min(stickMagnitude, 1.0);
+    double curvedFraction = Math.pow(stickFraction, OperatorConstants.kRotationCurveExponent);
+    return Math.signum(stickTwist) * curvedFraction * MaxAngularRate;
   }
 
   /**
