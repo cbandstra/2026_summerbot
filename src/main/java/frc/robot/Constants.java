@@ -42,6 +42,13 @@ public final class Constants {
     // go higher (e.g. 3.0) for even gentler low-speed response.
     public static final double kTranslationCurveExponent = 2.0;
 
+    // Same idea as kTranslationCurveExponent above, but for the twist axis: output fraction =
+    // stickFraction ^ kRotationCurveExponent above the deadband. No floor here (unlike
+    // translation) since low-speed rotation being weak isn't a usability problem the way
+    // barely-moving wheels is - the ask here was specifically to tone down rotation at low
+    // input, not guarantee a minimum.
+    public static final double kRotationCurveExponent = 2.0;
+
     // Once stick deflection is past the deadband above, translation output is floored to at
     // least this fraction of the drivetrain's TRUE top speed (not the slider-scaled speed) -
     // below this absolute speed the wheels don't move usefully, so there's no reason to ever
@@ -63,5 +70,23 @@ public final class Constants {
     // top rotational speed, higher than the slider's minimum translation cap since spinning in
     // place is inherently less dangerous than driving into something at speed.
     public static final double kMaxRotationOutputPercent = 0.30;
+  }
+
+  public static class VisionConstants {
+    // Name assigned to the C920 in the PhotonVision web UI's Cameras tab - must match exactly.
+    public static final String kCameraName = "C920_1";
+
+    // PID gains for rotating the robot to center the best-seen AprilTag in frame (see
+    // RobotContainer's button 2 binding). Input/setpoint are yaw error in degrees, output is
+    // rad/s. Start with P-only and tune kP on the robot; add kD if the heading oscillates
+    // before settling rather than converging smoothly.
+    public static final double kAlignRotationKP = 0.06;
+    public static final double kAlignRotationKI = 0.0;
+    public static final double kAlignRotationKD = 0.0;
+
+    // Within this many degrees of dead-center, the target is considered "aligned" - not
+    // currently gating anything, but available via PIDController's atSetpoint() for a future
+    // command that should finish once aligned.
+    public static final double kAlignYawToleranceDegrees = 1.5;
   }
 }
