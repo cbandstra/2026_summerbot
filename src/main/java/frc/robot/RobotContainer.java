@@ -149,37 +149,46 @@ public class RobotContainer {
 
   /**
    * Reads the driving stick, applies input smoothing, and returns robot-relative
-   * {@code {velocityX, velocityY}} in m/s, with two rules layered on top of the raw
-   * {@code stick * maxSpeed} scaling:
+   * {@code {velocityX, velocityY}} in m/s. Direction is taken straight from the stick; the
+   * requested speed (as a fraction of {@code maxSpeed}) goes through three rules in order:
    *
    * <ul>
-   *   <li>Below {@link OperatorConstants#kTranslationDeadband} of {@code maxSpeed}, output is
-   *       zero (the deadband shrinks/grows with the slider, since it's a fraction of the
-   *       currently-selected top speed).
-   *   <li>Above that deadband, output magnitude is floored to at least {@link
-   *       OperatorConstants#kMinOutputPercent} of the drivetrain's TRUE top speed - an absolute
-   *       floor that does not shrink with the slider, since it represents the speed below which
-   *       the wheels don't move usefully regardless of what the slider is set to. The floor is
-   *       clamped to {@code maxSpeed} so it can never command more than the slider currently
-   *       allows.
+   *   <li>Below {@link OperatorConstants#kTranslationDeadband} of full stick deflection, output
+   *       is zero.
+   *   <li>Above that deadband, the stick fraction is raised to {@link
+   *       OperatorConstants#kTranslationCurveExponent} before being scaled by {@code maxSpeed} -
+   *       this compresses the low end of the stick's range so small movements move slower than a
+   *       linear mapping would, without affecting the top end (full stick is still full
+   *       {@code maxSpeed}).
+   *   <li>The result is then floored to at least {@link OperatorConstants#kMinOutputPercent} of
+   *       the drivetrain's TRUE top speed - an absolute floor that does not shrink with the
+   *       slider, since it represents the speed below which the wheels don't move usefully
+   *       regardless of what the slider is set to. The floor is clamped to {@code maxSpeed} so it
+   *       can never command more than the slider currently allows.
    * </ul>
    *
    * @param maxSpeed the slider-scaled top speed (m/s) to scale stick deflection by
    */
   private double[] computeTranslationVelocity(double maxSpeed) {
-    double rawX = -m_xLimiter.calculate(m_driverController.getRawAxis(OperatorConstants.kThrustmasterYAxis)) * maxSpeed; // forward is stick pushed away (negative Y)
-    double rawY = -m_yLimiter.calculate(m_driverController.getRawAxis(OperatorConstants.kThrustmasterXAxis)) * maxSpeed; // left is stick pushed left (negative X)
-    double magnitude = Math.hypot(rawX, rawY);
+    double stickX = -m_xLimiter.calculate(m_driverController.getRawAxis(OperatorConstants.kThrustmasterYAxis)); // forward is stick pushed away (negative Y)
+    double stickY = -m_yLimiter.calculate(m_driverController.getRawAxis(OperatorConstants.kThrustmasterXAxis)); // left is stick pushed left (negative X)
+    double stickMagnitude = Math.hypot(stickX, stickY);
 
-    double deadbandThreshold = maxSpeed * OperatorConstants.kTranslationDeadband;
-    if (magnitude < deadbandThreshold) {
+    if (stickMagnitude < OperatorConstants.kTranslationDeadband) {
         return new double[] {0.0, 0.0};
     }
 
-    double floor = Math.min(OperatorConstants.kMinOutputPercent * kMaxSpeedMps, maxSpeed);
-    double targetMagnitude = Math.max(magnitude, floor);
-    double scale = targetMagnitude / magnitude;
-    return new double[] {rawX * scale, rawY * scale};
+    // Clamp to 1.0 in case of diagonal stick deflection (X and Y can each be at their own max).
+    double stickFraction = Math.min(stickMagnitude, 1.0);
+    double curvedFraction = Math.pow(stickFraction, OperatorConstants.kTranslationCurveExponent);
+
+    double floorFraction = Math.min(OperatorConstants.kMinOutputPercent * kMaxSpeedMps, maxSpeed) / maxSpeed;
+    double outputFraction = Math.max(curvedFraction, floorFraction);
+
+    double outputSpeed = outputFraction * maxSpeed;
+    double unitX = stickX / stickMagnitude;
+    double unitY = stickY / stickMagnitude;
+    return new double[] {unitX * outputSpeed, unitY * outputSpeed};
   }
 
   /**

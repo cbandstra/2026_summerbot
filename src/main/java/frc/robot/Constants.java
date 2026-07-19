@@ -33,6 +33,15 @@ public final class Constants {
     public static final double kTranslationDeadband = 0.10;
     public static final double kRotationDeadband = 0.10;
 
+    // Shapes the response between the deadband edge and full stick deflection: output fraction
+    // = stickFraction ^ kTranslationCurveExponent. At 1.0 the response is linear (unchanged).
+    // Above 1.0, small stick movements near the deadband produce proportionally less speed than
+    // linear would, giving finer control at low speed, while full deflection still reaches
+    // maxSpeed exactly - this is what makes "100% slider" driving usable at low speeds instead
+    // of every small push feeling like a lot of speed. 2.0 (squared) is a common starting point;
+    // go higher (e.g. 3.0) for even gentler low-speed response.
+    public static final double kTranslationCurveExponent = 2.0;
+
     // Once stick deflection is past the deadband above, translation output is floored to at
     // least this fraction of the drivetrain's TRUE top speed (not the slider-scaled speed) -
     // below this absolute speed the wheels don't move usefully, so there's no reason to ever
