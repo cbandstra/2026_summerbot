@@ -9,17 +9,19 @@ import static edu.wpi.first.units.Units.MetersPerSecond;
 import com.ctre.phoenix6.swerve.SwerveModule.DriveRequestType;
 import com.ctre.phoenix6.swerve.SwerveRequest;
 
+import edu.wpi.first.math.MathUtil;
+import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.math.filter.SlewRateLimiter;
-import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.button.CommandJoystick;
 import edu.wpi.first.wpilibj2.command.button.RobotModeTriggers;
-import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine.Direction;
 
 import frc.robot.Constants.OperatorConstants;
+import frc.robot.Constants.VisionConstants;
 import frc.robot.generated.TunerConstants;
 import frc.robot.subsystems.CommandSwerveDrivetrain;
+import frc.robot.subsystems.Vision;
 
 /**
  * This class is where the bulk of the robot should be declared. Since Command-based is a
@@ -45,8 +47,17 @@ public class RobotContainer {
 
   // The robot's subsystems and commands are defined here...
   public final CommandSwerveDrivetrain drivetrain = TunerConstants.createDrivetrain();
+  public final Vision vision = new Vision();
 
   private final Telemetry logger = new Telemetry(kMaxSpeedMps);
+
+  // Rotates the robot to center the best-seen AprilTag in frame (see the button 2 binding
+  // below). Input/setpoint are yaw error in degrees, output is rad/s.
+  private final PIDController m_alignRotationController = new PIDController(
+      VisionConstants.kAlignRotationKP,
+      VisionConstants.kAlignRotationKI,
+      VisionConstants.kAlignRotationKD
+  );
 
   // Thrustmaster T.16000M flight stick
   private final CommandJoystick m_driverController =
@@ -73,7 +84,6 @@ public class RobotContainer {
       .withRotationalDeadband(MaxAngularRate * OperatorConstants.kRotationDeadband)
       .withDriveRequestType(DriveRequestType.OpenLoopVoltage);
   private final SwerveRequest.SwerveDriveBrake brake = new SwerveRequest.SwerveDriveBrake();
-  private final SwerveRequest.PointWheelsAt point = new SwerveRequest.PointWheelsAt();
 
   /** The container for the robot. Contains subsystems, OI devices, and commands. */
   public RobotContainer() {
@@ -117,19 +127,32 @@ public class RobotContainer {
     m_driverController.button(OperatorConstants.kThrustmasterTriggerButton)
         .whileTrue(drivetrain.applyRequest(() -> brake));
 
-    // Hold the thumb button to point all wheels toward the stick's direction (module testing aid)
-    m_driverController.button(OperatorConstants.kThrustmasterThumbButton)
-        .whileTrue(drivetrain.applyRequest(() ->
-            point.withModuleDirection(new Rotation2d(
-                -m_driverController.getRawAxis(OperatorConstants.kThrustmasterYAxis),
-                -m_driverController.getRawAxis(OperatorConstants.kThrustmasterXAxis)))
-        ));
-
-    // Run SysId routines when the driver holds the POV hat up/down - each should only be run
-    // once per log. See CommandSwerveDrivetrain for how to switch which routine (translation/
-    // steer/rotation) these bindings exercise.
-    m_driverController.povUp().whileTrue(drivetrain.sysIdDynamic(Direction.kForward));
-    m_driverController.povDown().whileTrue(drivetrain.sysIdDynamic(Direction.kReverse));
+    // Hold button 2 (thumb button) to auto-rotate toward the best-seen AprilTag while
+    // driving/strafing normally - translation still comes straight from the stick (see
+    // computeTranslationVelocity), only rotation is overridden. If no tag is visible,
+    // rotationalRate stays 0 (normal manual driving, no auto-rotation).
+    m_driverController.button(OperatorConstants.kThrustmasterThumbButton).whileTrue(
+        Commands.startRun(
+            () -> m_alignRotationController.reset(),
+            () -> {
+                double maxSpeed = kMaxSpeedMps * throttleSpeedPercent();
+                double[] translation = computeTranslationVelocity(maxSpeed);
+                double rotationalRate = 0.0;
+                if (vision.hasTarget()) {
+                    // Confirmed on the robot: this camera/mount needs the raw (non-negated) yaw
+                    // here to turn toward the target rather than away from it.
+                    rotationalRate = MathUtil.clamp(
+                        m_alignRotationController.calculate(vision.getTargetYawDegrees(), 0.0),
+                        -MaxAngularRate, MaxAngularRate
+                    );
+                }
+                drivetrain.setControl(drive.withVelocityX(translation[0])
+                    .withVelocityY(translation[1])
+                    .withRotationalRate(rotationalRate));
+            },
+            drivetrain, vision
+        )
+    );
 
     drivetrain.registerTelemetry(logger::telemeterize);
   }

@@ -64,4 +64,22 @@ public final class Constants {
     // place is inherently less dangerous than driving into something at speed.
     public static final double kMaxRotationOutputPercent = 0.30;
   }
+
+  public static class VisionConstants {
+    // Name assigned to the C920 in the PhotonVision web UI's Cameras tab - must match exactly.
+    public static final String kCameraName = "C920_1";
+
+    // PID gains for rotating the robot to center the best-seen AprilTag in frame (see
+    // RobotContainer's POV-up binding). Input/setpoint are yaw error in degrees, output is
+    // rad/s. Start with P-only and tune kP on the robot; add kD if the heading oscillates
+    // before settling rather than converging smoothly.
+    public static final double kAlignRotationKP = 0.06;
+    public static final double kAlignRotationKI = 0.0;
+    public static final double kAlignRotationKD = 0.0;
+
+    // Within this many degrees of dead-center, the target is considered "aligned" - not
+    // currently gating anything, but available via PIDController's atSetpoint() for a future
+    // command that should finish once aligned.
+    public static final double kAlignYawToleranceDegrees = 1.5;
+  }
 }
