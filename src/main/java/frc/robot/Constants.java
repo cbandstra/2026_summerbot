@@ -27,6 +27,7 @@ public final class Constants {
     // Button numbers (1-indexed, as reported by WPILib), verify against Driver Station.
     public static final int kThrustmasterTriggerButton = 1;
     public static final int kThrustmasterThumbButton = 2;
+    public static final int kThrustmasterSearchButton = 3;
 
     // Deadband is a fraction of the CURRENT slider-selected top speed - below this much stick
     // deflection, translation output is zero, regardless of where the slider is set.
@@ -69,7 +70,7 @@ public final class Constants {
     // Rotation has no slider control - it's capped at a fixed fraction of the drivetrain's true
     // top rotational speed, higher than the slider's minimum translation cap since spinning in
     // place is inherently less dangerous than driving into something at speed.
-    public static final double kMaxRotationOutputPercent = 0.30;
+    public static final double kMaxRotationOutputPercent = .3;
   }
 
   public static class VisionConstants {
@@ -88,5 +89,11 @@ public final class Constants {
     // currently gating anything, but available via PIDController's atSetpoint() for a future
     // command that should finish once aligned.
     public static final double kAlignYawToleranceDegrees = 1.5;
+
+    // Absolute search-spin rate (rad/s) while holding the search button with no tag visible -
+    // NOT scaled off the drivetrain's MaxAngularRate, so it stays put regardless of drivetrain
+    // tuning. Kept deliberately below full speed even though the blur math at the current
+    // exposure setting allows faster - user preference, not a camera limitation.
+    public static final double kSearchRotationRadPerSec = 1.0;
   }
 }

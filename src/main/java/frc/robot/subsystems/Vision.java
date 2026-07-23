@@ -19,11 +19,15 @@ import frc.robot.Constants.VisionConstants;
 public class Vision extends SubsystemBase {
   private final PhotonCamera camera = new PhotonCamera(VisionConstants.kCameraName);
   private Optional<PhotonTrackedTarget> bestTarget = Optional.empty();
+  private double bestTargetTimestampSeconds = 0.0;
 
   @Override
   public void periodic() {
     for (var result : camera.getAllUnreadResults()) {
       bestTarget = result.hasTargets() ? Optional.of(result.getBestTarget()) : Optional.empty();
+      if (bestTarget.isPresent()) {
+        bestTargetTimestampSeconds = result.getTimestampSeconds();
+      }
     }
   }
 
@@ -40,5 +44,16 @@ public class Vision extends SubsystemBase {
    */
   public double getTargetYawDegrees() {
     return bestTarget.map(PhotonTrackedTarget::getYaw).orElse(0.0);
+  }
+
+  /**
+   * The estimated wall-clock time (Time Sync Server base, same as {@code Timer.getFPGATimestamp()}
+   * on this robot) at which the frame containing the current best target was actually captured -
+   * always some pipeline/network latency behind "now". Used to latency-compensate the yaw reading
+   * against how far the robot has rotated since that frame was taken (see
+   * RobotContainer.computeAlignRotationalRate()). Meaningless if {@link #hasTarget()} is false.
+   */
+  public double getTargetTimestampSeconds() {
+    return bestTargetTimestampSeconds;
   }
 }

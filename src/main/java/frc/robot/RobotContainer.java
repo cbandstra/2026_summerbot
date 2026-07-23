@@ -6,6 +6,7 @@ package frc.robot;
 
 import static edu.wpi.first.units.Units.MetersPerSecond;
 
+import com.ctre.phoenix6.Utils;
 import com.ctre.phoenix6.swerve.SwerveModule.DriveRequestType;
 import com.ctre.phoenix6.swerve.SwerveRequest;
 
@@ -140,14 +141,33 @@ public class RobotContainer {
                 double[] translation = computeTranslationVelocity(maxSpeed);
                 double rotationalRate;
                 if (vision.hasTarget()) {
-                    // Confirmed on the robot: this camera/mount needs the raw (non-negated) yaw
-                    // here to turn toward the target rather than away from it.
-                    rotationalRate = MathUtil.clamp(
-                        m_alignRotationController.calculate(vision.getTargetYawDegrees(), 0.0),
-                        -MaxAngularRate, MaxAngularRate
-                    );
+                    rotationalRate = computeAlignRotationalRate();
                 } else {
                     rotationalRate = computeManualRotationalRate();
+                }
+                drivetrain.setControl(drive.withVelocityX(translation[0])
+                    .withVelocityY(translation[1])
+                    .withRotationalRate(rotationalRate));
+            },
+            drivetrain, vision
+        )
+    );
+
+    // Hold button 3 to spin in place looking for any AprilTag, then auto-align to it once seen.
+    // Reuses m_alignRotationController - safe since button 2 and button 3 both require
+    // drivetrain/vision, so the command scheduler only ever runs one of these at a time even if
+    // both buttons are held, and startRun() resets the controller on whichever one (re)starts.
+    m_driverController.button(OperatorConstants.kThrustmasterSearchButton).whileTrue(
+        Commands.startRun(
+            () -> m_alignRotationController.reset(),
+            () -> {
+                double maxSpeed = kMaxSpeedMps * throttleSpeedPercent();
+                double[] translation = computeTranslationVelocity(maxSpeed);
+                double rotationalRate;
+                if (vision.hasTarget()) {
+                    rotationalRate = computeAlignRotationalRate();
+                } else {
+                    rotationalRate = Math.min(VisionConstants.kSearchRotationRadPerSec, MaxAngularRate);
                 }
                 drivetrain.setControl(drive.withVelocityX(translation[0])
                     .withVelocityY(translation[1])
@@ -171,6 +191,44 @@ public class RobotContainer {
     double t = (1.0 - axis) / 2.0; // -1 -> 1 (max), +1 -> 0 (min)
     return OperatorConstants.kSliderMinSpeedPercent
         + t * (OperatorConstants.kSliderMaxSpeedPercent - OperatorConstants.kSliderMinSpeedPercent);
+  }
+
+  /**
+   * Rotational rate (rad/s, clamped to MaxAngularRate) to turn the robot toward the best-seen
+   * AprilTag, latency-compensated. The camera frame behind {@link Vision#getTargetYawDegrees()}
+   * is always some pipeline/network latency old (measured ~60ms on this rig) - by the time it's
+   * read here, the robot has kept rotating for that whole delay, so reacting to the raw yaw as if
+   * it were current causes a real overshoot (robot turns past where the tag actually is "now").
+   * This corrects for that using {@link CommandSwerveDrivetrain#samplePoseAt}, which reconstructs
+   * the robot's own heading at the frame's capture timestamp from its odometry history: the
+   * difference between that historical heading and the current one is exactly how far the robot
+   * has rotated since the frame was taken, which gets subtracted back out of the raw yaw. Falls
+   * back to the raw (uncompensated) yaw if the odometry buffer doesn't reach back that far (e.g.
+   * right at startup). PhotonVision's timestamp is in the FPGA/NT4 epoch, but samplePoseAt()
+   * expects CTRE's own {@code Utils.getCurrentTimeSeconds()} epoch - those are different clocks
+   * in Phoenix 6, so the timestamp must go through {@link Utils#fpgaToCurrentTime} first or
+   * samplePoseAt() just returns empty every time and this silently does nothing.
+   *
+   * <p>Confirmed on the robot: this camera/mount needs the raw (non-negated) yaw sign to turn
+   * toward the target rather than away from it - both PhotonVision's yaw and WPILib's Rotation2d
+   * use the same positive-CCW convention, so this compensation needs no extra sign flip either.
+   */
+  private double computeAlignRotationalRate() {
+    double rawYawDegrees = vision.getTargetYawDegrees();
+    double compensatedYawDegrees = rawYawDegrees;
+
+    var historicalPose = drivetrain.samplePoseAt(Utils.fpgaToCurrentTime(vision.getTargetTimestampSeconds()));
+    if (historicalPose.isPresent()) {
+        double rotationSinceFrameDegrees = drivetrain.getState().Pose.getRotation()
+            .minus(historicalPose.get().getRotation())
+            .getDegrees();
+        compensatedYawDegrees = rawYawDegrees - rotationSinceFrameDegrees;
+    }
+
+    return MathUtil.clamp(
+        m_alignRotationController.calculate(compensatedYawDegrees, 0.0),
+        -MaxAngularRate, MaxAngularRate
+    );
   }
 
   /**

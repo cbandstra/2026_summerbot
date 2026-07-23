@@ -66,7 +66,7 @@ public class TunerConstants {
     // steps once kD is damping well. A proper SysId steer characterization (already wired into
     // CommandSwerveDrivetrain) will get more precise numbers than manual tuning.
     private static final Slot0Configs steerGains = new Slot0Configs()
-        .withKP(15).withKI(0).withKD(1.5)
+        .withKP(8).withKI(0).withKD(0.01)
         .withKS(0.1).withKV(1.91).withKA(0)
         .withStaticFeedforwardSign(StaticFeedforwardSignValue.UseClosedLoopSign);
     // When using closed-loop control, the drive motor uses the control
