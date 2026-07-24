@@ -10,9 +10,16 @@ import com.ctre.phoenix6.Utils;
 import com.ctre.phoenix6.swerve.SwerveModule.DriveRequestType;
 import com.ctre.phoenix6.swerve.SwerveRequest;
 
+import java.util.Optional;
+
+import org.photonvision.targeting.PhotonTrackedTarget;
+
 import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.math.filter.SlewRateLimiter;
+import edu.wpi.first.math.geometry.Rotation2d;
+import edu.wpi.first.wpilibj.Timer;
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.button.CommandJoystick;
@@ -60,6 +67,24 @@ public class RobotContainer {
       VisionConstants.kAlignRotationKD
   );
 
+  // Closes distance to the target tag during the tag-search-and-approach button (see the button
+  // 4 binding below). Input is measured ground-plane distance (m), setpoint is
+  // kApproachDistanceMeters, output is forward speed (m/s).
+  private final PIDController m_approachDistanceController = new PIDController(
+      VisionConstants.kApproachDistanceKP,
+      VisionConstants.kApproachDistanceKI,
+      VisionConstants.kApproachDistanceKD
+  );
+
+  // Strafes to actually square the robot up with the target tag's face during the tag-search-
+  // and-approach button (see the button 4 binding below), rather than just gating on it - input
+  // is the signed tag-face angle (degrees), setpoint 0, output is sideways speed (m/s).
+  private final PIDController m_tagFaceAlignController = new PIDController(
+      VisionConstants.kTagFaceAlignKP,
+      VisionConstants.kTagFaceAlignKI,
+      VisionConstants.kTagFaceAlignKD
+  );
+
   // Thrustmaster T.16000M flight stick
   private final CommandJoystick m_driverController =
       new CommandJoystick(OperatorConstants.kDriverControllerPort);
@@ -85,6 +110,14 @@ public class RobotContainer {
       .withRotationalDeadband(0)
       .withDriveRequestType(DriveRequestType.OpenLoopVoltage);
   private final SwerveRequest.SwerveDriveBrake brake = new SwerveRequest.SwerveDriveBrake();
+
+  // Robot-centric (not field-centric) since the tag-search-and-approach button (button 4) always
+  // means "drive toward whatever the camera currently sees," relative to the robot's own facing,
+  // not a fixed field direction.
+  private final SwerveRequest.RobotCentric approach = new SwerveRequest.RobotCentric()
+      .withDeadband(0)
+      .withRotationalDeadband(0)
+      .withDriveRequestType(DriveRequestType.OpenLoopVoltage);
 
   /** The container for the robot. Contains subsystems, OI devices, and commands. */
   public RobotContainer() {
@@ -177,7 +210,181 @@ public class RobotContainer {
         )
     );
 
+    // Press button 4 to toggle the tag-search-and-approach routine on: searches (in
+    // VisionConstants.kSearchTagIdOrder priority order) for one of a specific set of AprilTag
+    // IDs, then autonomously drives to within kApproachDistanceMeters of it once found, holds
+    // there for kApproachSettleSeconds once arrived, then finishes on its own (control reverts
+    // to the normal driving default command). Pressing button 4 again while it's still running
+    // cancels it early. Unlike buttons 2/3, this takes over BOTH rotation and translation - a
+    // fully automatic "go do this" action, not a driving assist. This is the first autonomous-
+    // translation behavior on this robot (buttons 2/3 only ever touched rotation) - test
+    // cautiously (blocks first) until the distance PID's sign/behavior is confirmed correct.
+    m_driverController.button(OperatorConstants.kThrustmasterTagSearchButton)
+        .toggleOnTrue(tagSearchAndApproachCommand());
+
     drivetrain.registerTelemetry(logger::telemeterize);
+  }
+
+  /**
+   * Builds the tag-search-and-approach command bound to button 4 (see the binding's comment for
+   * the overall behavior). Structured as search/approach (runs until "arrived": both squared up
+   * within {@link VisionConstants#kAlignYawToleranceDegrees} and within {@link
+   * VisionConstants#kApproachDistanceToleranceMeters} of the target standoff distance) followed
+   * by a hold phase that keeps station for {@link VisionConstants#kApproachSettleSeconds} before
+   * finishing on its own. {@code arrivedTimer} is captured by both phases' lambdas - {@link
+   * edu.wpi.first.wpilibj.Timer#start()} is a no-op if already running, so calling it every loop
+   * while arrived doesn't reset the elapsed time, but any loop where the robot drifts back out of
+   * tolerance stops and resets it, requiring a fresh, continuous
+   * {@code kApproachSettleSeconds} of being settled rather than a cumulative one.
+   *
+   * <p>Priority-order search does NOT just grab whichever of {@link
+   * VisionConstants#kSearchTagIdOrder} happens to sweep into view first - {@code soughtIndex}
+   * tracks which single ID it's currently committed to, starting at index 0 (highest priority).
+   * If that specific tag hasn't turned up after a full 360-degree search sweep, it gives up on it
+   * and advances to the next ID, rather than settling for a lower-priority tag just because it
+   * happened to be seen first. The sweep is measured from the robot's ACTUAL odometry rotation
+   * (accumulated per-loop heading deltas, since a single current-vs-start {@code Rotation2d}
+   * comparison would wrap back near zero once a full revolution completes, hiding exactly the
+   * event we're trying to detect) rather than assumed from the commanded search rate x time -
+   * {@code OpenLoopVoltage} control has real acceleration ramp-up and no closed-loop guarantee of
+   * hitting the commanded rate exactly, so a timing-based estimate can run out before a real 360
+   * degrees has actually been swept, prematurely restarting the sweep right as the tag was about
+   * to come into view.
+   */
+  private Command tagSearchAndApproachCommand() {
+    Timer arrivedTimer = new Timer();
+    int[] soughtIndex = {0};
+    double[] sweptDegrees = {0.0};
+    Rotation2d[] lastHeading = {null};
+
+    Runnable driveTowardTarget = () -> {
+        int soughtId = VisionConstants.kSearchTagIdOrder[
+            Math.min(soughtIndex[0], VisionConstants.kSearchTagIdOrder.length - 1)];
+        Optional<PhotonTrackedTarget> target = vision.getTargetById(soughtId);
+        SmartDashboard.putNumber("TagSearch/SoughtId", soughtId);
+
+        double rotationalRate;
+        double forwardSpeed;
+        double lateralSpeed = 0.0;
+        boolean arrived = false;
+
+        if (target.isPresent()) {
+            sweptDegrees[0] = 0.0;
+            lastHeading[0] = null;
+
+            PhotonTrackedTarget seenTarget = target.get();
+            int seenTargetId = seenTarget.getFiducialId();
+            double compensatedYawDegrees = computeCompensatedYawDegrees(
+                seenTarget.getYaw(), vision.getTargetTimestampSeconds());
+            rotationalRate = MathUtil.clamp(
+                m_alignRotationController.calculate(compensatedYawDegrees, 0.0),
+                -MaxAngularRate, MaxAngularRate
+            );
+
+            // Ground-plane distance (ignores the camera/tag height difference) from the
+            // camera-to-target 3D transform - requires the PhotonVision pipeline to have a valid
+            // camera calibration for this to be meaningful.
+            var cameraToTarget = seenTarget.getBestCameraToTarget().getTranslation();
+            double distanceMeters = Math.hypot(cameraToTarget.getX(), cameraToTarget.getY());
+            double distanceErrorMeters = distanceMeters - VisionConstants.kApproachDistanceMeters;
+            // Negated: PIDController.calculate(measurement, setpoint) gives a NEGATIVE output
+            // when measurement > setpoint (too far away), but driving forward (positive
+            // velocityX) is exactly what CLOSES that distance - the opposite of a typical PID
+            // relationship, where positive output increases the measurement. Confirmed backwards
+            // on the robot without this negation (drove away from the tag instead of toward it).
+            double approachOutput = -m_approachDistanceController.calculate(
+                distanceMeters, VisionConstants.kApproachDistanceMeters);
+
+            // Don't start closing distance until roughly squared up with the tag - avoids
+            // crabbing in at a steep angle while still mid-rotation.
+            boolean squaredUp = Math.abs(compensatedYawDegrees)
+                <= VisionConstants.kApproachYawToleranceDegrees;
+            forwardSpeed = squaredUp
+                ? MathUtil.clamp(approachOutput,
+                    -VisionConstants.kApproachMaxSpeedMps, VisionConstants.kApproachMaxSpeedMps)
+                : 0.0;
+
+            // --- Squaring-up (tag-face alignment) DISABLED 2026-07-23 ---
+            // This actively strafed to close the tag's own face-angle error (distinct from
+            // compensatedYawDegrees, which is the tag's left/right position in frame - this is
+            // whether the tag's face itself is turned away from the camera). Removed because
+            // running it alongside the rotation-centering loop caused the robot to circle the
+            // target: strafing shifts the tag's bearing, which triggers a rotation correction,
+            // which changes what "squared" reads as, which triggers more strafing - the two
+            // reactive loops fighting each other instead of converging. The correct fix is NOT
+            // more gain tuning but a different architecture: compute a single target transform
+            // (the point kApproachDistanceMeters directly in front of the tag, facing it) via
+            // seenTarget.getBestCameraToTarget().plus(...) and drive at that one computed point
+            // with simple proportional control on its resulting x/y/theta, instead of reacting to
+            // yaw/distance/face-angle as three independent numbers. Re-enable via that redesign,
+            // not by uncommenting this block as-is.
+            //
+            // double signedTagFaceAngleDegrees = MathUtil.inputModulus(
+            //     Math.toDegrees(seenTarget.getBestCameraToTarget().getRotation().getZ()) - 180.0,
+            //     -180.0, 180.0
+            // );
+            // double tagFaceAngleDegrees = Math.abs(signedTagFaceAngleDegrees);
+            // lateralSpeed = squaredUp
+            //     ? MathUtil.clamp(-m_tagFaceAlignController.calculate(signedTagFaceAngleDegrees, 0.0),
+            //         -VisionConstants.kApproachMaxSpeedMps, VisionConstants.kApproachMaxSpeedMps)
+            //     : 0.0;
+
+            arrived = Math.abs(compensatedYawDegrees) <= VisionConstants.kAlignYawToleranceDegrees
+                && Math.abs(distanceErrorMeters) <= VisionConstants.kApproachDistanceToleranceMeters;
+
+            SmartDashboard.putNumber("TagSearch/TargetId", seenTargetId);
+            SmartDashboard.putNumber("TagSearch/YawErrorDegrees", compensatedYawDegrees);
+            SmartDashboard.putNumber("TagSearch/DistanceMeters", distanceMeters);
+            SmartDashboard.putNumber("TagSearch/DistanceErrorMeters", distanceErrorMeters);
+        } else {
+            Rotation2d currentHeading = drivetrain.getState().Pose.getRotation();
+            if (lastHeading[0] != null) {
+                sweptDegrees[0] += Math.abs(currentHeading.minus(lastHeading[0]).getDegrees());
+            }
+            lastHeading[0] = currentHeading;
+
+            if (sweptDegrees[0] >= 360.0
+                && soughtIndex[0] < VisionConstants.kSearchTagIdOrder.length - 1) {
+                soughtIndex[0]++;
+                sweptDegrees[0] = 0.0;
+            }
+
+            SmartDashboard.putNumber("TagSearch/SweptDegrees", sweptDegrees[0]);
+            rotationalRate = Math.min(VisionConstants.kSearchRotationRadPerSec, MaxAngularRate);
+            forwardSpeed = 0.0;
+            SmartDashboard.putNumber("TagSearch/TargetId", -1);
+        }
+
+        if (arrived) {
+            arrivedTimer.start();
+            // Hold station once arrived, ignoring any residual PID jitter.
+            forwardSpeed = 0.0;
+            lateralSpeed = 0.0;
+        } else {
+            arrivedTimer.stop();
+            arrivedTimer.reset();
+        }
+
+        SmartDashboard.putBoolean("TagSearch/Arrived", arrived);
+        SmartDashboard.putNumber("TagSearch/ArrivedTimerSeconds", arrivedTimer.get());
+
+        drivetrain.setControl(approach.withVelocityX(forwardSpeed)
+            .withVelocityY(lateralSpeed)
+            .withRotationalRate(rotationalRate));
+    };
+
+    return Commands.runOnce(() -> {
+            m_alignRotationController.reset();
+            m_approachDistanceController.reset();
+            m_tagFaceAlignController.reset();
+            arrivedTimer.stop();
+            arrivedTimer.reset();
+            soughtIndex[0] = 0;
+            sweptDegrees[0] = 0.0;
+            lastHeading[0] = null;
+        }, drivetrain, vision)
+        .andThen(Commands.run(driveTowardTarget, drivetrain, vision)
+            .until(() -> arrivedTimer.hasElapsed(VisionConstants.kApproachSettleSeconds)));
   }
 
   /**
@@ -214,21 +421,39 @@ public class RobotContainer {
    * use the same positive-CCW convention, so this compensation needs no extra sign flip either.
    */
   private double computeAlignRotationalRate() {
-    double rawYawDegrees = vision.getTargetYawDegrees();
-    double compensatedYawDegrees = rawYawDegrees;
+    return computeAlignRotationalRate(vision.getTargetYawDegrees(), vision.getTargetTimestampSeconds());
+  }
 
-    var historicalPose = drivetrain.samplePoseAt(Utils.fpgaToCurrentTime(vision.getTargetTimestampSeconds()));
-    if (historicalPose.isPresent()) {
-        double rotationSinceFrameDegrees = drivetrain.getState().Pose.getRotation()
-            .minus(historicalPose.get().getRotation())
-            .getDegrees();
-        compensatedYawDegrees = rawYawDegrees - rotationSinceFrameDegrees;
-    }
-
+  /**
+   * Same latency-compensated align math as {@link #computeAlignRotationalRate()}, but for an
+   * arbitrary target's yaw/frame-timestamp instead of always reading PhotonVision's overall
+   * "best" target - used by the tag-search-and-approach button (button 4) to align to a
+   * specific tag ID rather than whichever target PhotonVision considers best.
+   */
+  private double computeAlignRotationalRate(double rawYawDegrees, double frameTimestampSeconds) {
+    double compensatedYawDegrees = computeCompensatedYawDegrees(rawYawDegrees, frameTimestampSeconds);
     return MathUtil.clamp(
         m_alignRotationController.calculate(compensatedYawDegrees, 0.0),
         -MaxAngularRate, MaxAngularRate
     );
+  }
+
+  /**
+   * The latency-compensation math shared by both {@link #computeAlignRotationalRate(double,
+   * double)} and the tag-search-and-approach button (button 4), which also needs the compensated
+   * yaw value itself (not just the resulting rotational rate) to gate forward approach speed on
+   * how squared-up the robot currently is. See computeAlignRotationalRate's javadoc for why this
+   * compensation is needed and the FPGA/CTRE epoch conversion it depends on.
+   */
+  private double computeCompensatedYawDegrees(double rawYawDegrees, double frameTimestampSeconds) {
+    var historicalPose = drivetrain.samplePoseAt(Utils.fpgaToCurrentTime(frameTimestampSeconds));
+    if (historicalPose.isEmpty()) {
+        return rawYawDegrees;
+    }
+    double rotationSinceFrameDegrees = drivetrain.getState().Pose.getRotation()
+        .minus(historicalPose.get().getRotation())
+        .getDegrees();
+    return rawYawDegrees - rotationSinceFrameDegrees;
   }
 
   /**
