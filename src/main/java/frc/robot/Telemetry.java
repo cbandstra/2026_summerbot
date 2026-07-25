@@ -1,5 +1,7 @@
 package frc.robot;
 
+import java.util.Objects;
+
 import com.ctre.phoenix6.SignalLogger;
 import com.ctre.phoenix6.swerve.SwerveDrivetrain.SwerveDriveState;
 
@@ -85,8 +87,26 @@ public class Telemetry {
 
     private final double[] m_poseArray = new double[3];
 
+    // Below these, translation/rotation is considered "stopped" for logging purposes - small
+    // enough to catch real driver/command intent, large enough to ignore residual control-loop
+    // noise. Independent of OperatorConstants' input deadbands, which shape stick response, not
+    // log-worthiness of the drivetrain's actual measured output.
+    private static final double kTranslationLogThresholdMps = 0.1;
+    // Raised from 0.1 - was triggering "Rotating..." log lines too easily off small residual
+    // rotation (e.g. steer settling, minor stick noise) that wasn't really the driver/command
+    // intentionally rotating.
+    private static final double kRotationLogThresholdRadPerSec = 0.3;
+
+    // Null means "stopped" - tracked so logMotionChanges() only prints on a change, not every
+    // loop, regardless of which command (manual driving, align, search, approach) is currently
+    // commanding the drivetrain.
+    private String lastTranslationLabel = null;
+    private String lastRotationLabel = null;
+
     /** Accept the swerve drive state and telemeterize it to SmartDashboard and SignalLogger. */
     public void telemeterize(SwerveDriveState state) {
+        logMotionChanges(state.Speeds);
+
         /* Telemeterize the swerve drive state */
         drivePose.set(state.Pose);
         driveSpeeds.set(state.Speeds);
@@ -119,5 +139,54 @@ public class Telemetry {
             m_moduleDirections[i].setAngle(state.ModuleStates[i].angle);
             m_moduleSpeeds[i].setLength(state.ModuleStates[i].speedMetersPerSecond / (2 * MaxSpeed));
         }
+    }
+
+    /**
+     * Logs "Going &lt;direction&gt; at velocity &lt;x&gt;" / "Rotating clockwise" /
+     * "counterclockwise" / "Stopped" to the console on state changes only - covers whatever
+     * command is currently driving (manual, align, search, tag-approach) uniformly, since they
+     * all flow through this same measured-speeds callback rather than needing their own logging.
+     */
+    private void logMotionChanges(ChassisSpeeds speeds) {
+        String translationLabel = translationLabel(speeds.vxMetersPerSecond, speeds.vyMetersPerSecond);
+        String rotationLabel = rotationLabel(speeds.omegaRadiansPerSecond);
+        boolean wasMoving = lastTranslationLabel != null || lastRotationLabel != null;
+        boolean isMoving = translationLabel != null || rotationLabel != null;
+
+        if (!Objects.equals(translationLabel, lastTranslationLabel) && translationLabel != null) {
+            double speed = Math.hypot(speeds.vxMetersPerSecond, speeds.vyMetersPerSecond);
+            RobotLog.log(String.format("Going %s at velocity %.2f", translationLabel, speed));
+        }
+        if (!Objects.equals(rotationLabel, lastRotationLabel) && rotationLabel != null) {
+            RobotLog.log("Rotating " + rotationLabel);
+        }
+        if (wasMoving && !isMoving) {
+            RobotLog.log("Stopped");
+        }
+
+        lastTranslationLabel = translationLabel;
+        lastRotationLabel = rotationLabel;
+    }
+
+    /** Null (below threshold) means "stopped"; otherwise the dominant axis's direction. */
+    private static String translationLabel(double vxMetersPerSecond, double vyMetersPerSecond) {
+        if (Math.hypot(vxMetersPerSecond, vyMetersPerSecond) < kTranslationLogThresholdMps) {
+            return null;
+        }
+        // Dominant axis determines the label - a perfectly diagonal command is rare in practice
+        // and this is a human-readable log line, not a precise measurement.
+        // Confirmed backwards on the robot vs. WPILib's nominal +X-is-forward convention - flipped.
+        return Math.abs(vxMetersPerSecond) >= Math.abs(vyMetersPerSecond)
+            ? (vxMetersPerSecond > 0 ? "backward" : "forward")
+            : (vyMetersPerSecond > 0 ? "left" : "right");
+    }
+
+    /** Null (below threshold) means "stopped"; otherwise "clockwise"/"counterclockwise". */
+    private static String rotationLabel(double omegaRadiansPerSecond) {
+        if (Math.abs(omegaRadiansPerSecond) < kRotationLogThresholdRadPerSec) {
+            return null;
+        }
+        // WPILib convention: positive omega is counter-clockwise.
+        return omegaRadiansPerSecond > 0 ? "counterclockwise" : "clockwise";
     }
 }
