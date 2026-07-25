@@ -23,6 +23,10 @@ public class Robot extends TimedRobot {
    * initialization code.
    */
   public Robot() {
+    // Prune old SignalLogger session folders before anything (CTRE devices, RobotContainer)
+    // gets a chance to try starting a new log - see LogCleanup for why this is needed.
+    LogCleanup.pruneIfLow();
+
     // Instantiate our RobotContainer.  This will perform all our button bindings, and put our
     // autonomous chooser on the dashboard.
     m_robotContainer = new RobotContainer();
