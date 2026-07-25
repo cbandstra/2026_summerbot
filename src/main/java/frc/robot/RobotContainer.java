@@ -24,6 +24,7 @@ import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
+import edu.wpi.first.wpilibj2.command.FunctionalCommand;
 import edu.wpi.first.wpilibj2.command.button.CommandJoystick;
 import edu.wpi.first.wpilibj2.command.button.RobotModeTriggers;
 
@@ -100,6 +101,17 @@ public class RobotContainer {
   // search direction, not a correctness problem, since the full-360 give-up sweep still covers
   // every direction regardless.
   private final Map<Integer, Rotation2d> m_lastKnownTagBearings = new HashMap<>();
+
+  // Tracks which target ID button 2 has already logged "Targeting initiated..." for during the
+  // current button hold, so it only logs on a fresh acquisition (button press with a tag already
+  // in view, the tag changing, or re-acquiring after a loss) rather than every loop. -1 means
+  // nothing logged yet this hold.
+  private int m_loggedAlignTargetId = -1;
+
+  // Tracks whether button 3 has already logged "Looking for April tags" for the current
+  // no-target streak, so it only logs once per loss (including right at button press if nothing
+  // is visible yet) rather than every loop while still searching.
+  private boolean m_loggedSearching = false;
 
   // Thrustmaster T.16000M flight stick
   private final CommandJoystick m_driverController =
@@ -181,23 +193,35 @@ public class RobotContainer {
     // driving/strafing normally - translation still comes straight from the stick (see
     // computeTranslationVelocity), only rotation is overridden. If no tag is visible, rotation
     // falls back to the twist stick (same as normal manual driving) so the driver isn't locked
-    // out of rotating while searching for a tag to align to.
+    // out of rotating while searching for a tag to align to. Uses FunctionalCommand instead of
+    // Commands.startRun so it has an onEnd hook to log the button release.
     m_driverController.button(OperatorConstants.kThrustmasterThumbButton).whileTrue(
-        Commands.startRun(
-            () -> m_alignRotationController.reset(),
+        new FunctionalCommand(
+            () -> {
+                m_alignRotationController.reset();
+                m_loggedAlignTargetId = -1;
+            },
             () -> {
                 double maxSpeed = kMaxSpeedMps * throttleSpeedPercent();
                 double[] translation = computeTranslationVelocity(maxSpeed);
                 double rotationalRate;
                 if (vision.hasTarget()) {
                     rotationalRate = computeAlignRotationalRate();
+                    int currentId = vision.getBestTargetId();
+                    if (currentId != m_loggedAlignTargetId) {
+                        RobotLog.log("Targeting initiated for April Tag : ID " + currentId);
+                        m_loggedAlignTargetId = currentId;
+                    }
                 } else {
                     rotationalRate = computeManualRotationalRate();
+                    m_loggedAlignTargetId = -1;
                 }
                 drivetrain.setControl(drive.withVelocityX(translation[0])
                     .withVelocityY(translation[1])
                     .withRotationalRate(rotationalRate));
             },
+            interrupted -> RobotLog.log("Targeting button released"),
+            () -> false,
             drivetrain, vision
         )
     );
@@ -208,14 +232,22 @@ public class RobotContainer {
     // both buttons are held, and startRun() resets the controller on whichever one (re)starts.
     m_driverController.button(OperatorConstants.kThrustmasterSearchButton).whileTrue(
         Commands.startRun(
-            () -> m_alignRotationController.reset(),
+            () -> {
+                m_alignRotationController.reset();
+                m_loggedSearching = false;
+            },
             () -> {
                 double maxSpeed = kMaxSpeedMps * throttleSpeedPercent();
                 double[] translation = computeTranslationVelocity(maxSpeed);
                 double rotationalRate;
                 if (vision.hasTarget()) {
                     rotationalRate = computeAlignRotationalRate();
+                    m_loggedSearching = false;
                 } else {
+                    if (!m_loggedSearching) {
+                        RobotLog.log("Looking for April tags");
+                        m_loggedSearching = true;
+                    }
                     rotationalRate = Math.min(VisionConstants.kSearchRotationRadPerSec, MaxAngularRate);
                 }
                 drivetrain.setControl(drive.withVelocityX(translation[0])

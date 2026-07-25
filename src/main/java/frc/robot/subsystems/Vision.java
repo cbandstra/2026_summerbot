@@ -9,6 +9,7 @@ import org.photonvision.targeting.PhotonTrackedTarget;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
 
 import frc.robot.Constants.VisionConstants;
+import frc.robot.RobotLog;
 
 /**
  * Wraps the PhotonVision coprocessor's camera feed. The best target is cached once per
@@ -23,6 +24,10 @@ public class Vision extends SubsystemBase {
   private double bestTargetTimestampSeconds = 0.0;
   private List<PhotonTrackedTarget> currentTargets = List.of();
 
+  // -1 means "not currently targeting anything" - tracked so acquired/lost logging below only
+  // prints on a change of PhotonVision's overall "best" target ID, not every loop.
+  private int loggedTargetId = -1;
+
   @Override
   public void periodic() {
     for (var result : camera.getAllUnreadResults()) {
@@ -31,6 +36,17 @@ public class Vision extends SubsystemBase {
       if (bestTarget.isPresent()) {
         bestTargetTimestampSeconds = result.getTimestampSeconds();
       }
+    }
+
+    int currentId = bestTarget.map(PhotonTrackedTarget::getFiducialId).orElse(-1);
+    if (currentId != loggedTargetId) {
+      if (loggedTargetId != -1) {
+        RobotLog.log("April Tag out of view: ID " + loggedTargetId);
+      }
+      if (currentId != -1) {
+        RobotLog.log("April Tag in view: ID " + currentId);
+      }
+      loggedTargetId = currentId;
     }
   }
 
@@ -49,6 +65,11 @@ public class Vision extends SubsystemBase {
   /** True if an AprilTag was seen in the most recently processed camera frame. */
   public boolean hasTarget() {
     return bestTarget.isPresent();
+  }
+
+  /** Fiducial ID of PhotonVision's overall "best" target, or -1 if none is visible. */
+  public int getBestTargetId() {
+    return bestTarget.map(PhotonTrackedTarget::getFiducialId).orElse(-1);
   }
 
   /**

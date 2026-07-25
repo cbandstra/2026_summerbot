@@ -13,16 +13,18 @@ import edu.wpi.first.wpilibj.DriverStation;
 /**
  * Prunes old CTRE SignalLogger session folders on the roboRIO's flash storage. The roboRIO has
  * very little onboard space (under 400 MB total), and SignalLogger refuses to start a new log
- * once free space drops below 10 MB - each timestamped folder under kLogsDirectory is one past
- * session's log, so the oldest ones are safe to delete to make room for logging to keep working.
+ * once free space drops below 10 MB (and separately warns/starts auto-deleting its own old hoot
+ * logs once free space drops below 50 MB) - each timestamped folder under kLogsDirectory is one
+ * past session's log, so the oldest ones are safe to delete to make room.
  */
 final class LogCleanup {
   private static final Path kLogsDirectory = Path.of("/home/lvuser/logs");
 
-  // Prune until at least this much space is free - well above CTRE's 10 MB minimum, so this
-  // doesn't immediately have to run (and delete more) again after just one more session's worth
-  // of logging.
-  private static final long kTargetFreeBytes = 50L * 1024 * 1024;
+  // Prune until at least this much space is free. Deliberately well above CTRE's own 50 MB
+  // "low disk" warning threshold (not just its 10 MB hard-failure one) - targeting 50 MB exactly
+  // left zero buffer, so disk usage crossing back under 50 MB between deploys (from CTRE's own
+  // logging accumulating) immediately re-triggered CTRE's warning. Confirmed on the robot.
+  private static final long kTargetFreeBytes = 150L * 1024 * 1024;
 
   private LogCleanup() {}
 
