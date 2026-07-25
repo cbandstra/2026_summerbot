@@ -5,15 +5,19 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
 
 import frc.robot.Constants.UltrasonicConstants;
+import frc.robot.RobotLog;
 
 /**
  * Wraps a single HC-SR04 ultrasonic sensor via WPILib's built-in trigger/echo Ultrasonic class.
- * No avoidance behavior yet - this just gets a real distance reading onto the dashboard so wiring
- * and orientation can be confirmed before anything reacts to it.
+ * No avoidance behavior yet - this just gets a real distance reading onto the dashboard and the
+ * console/RioLog so wiring and orientation can be confirmed before anything reacts to it.
  */
 public class ObstacleSensor extends SubsystemBase {
   private final Ultrasonic ultrasonic = new Ultrasonic(
       UltrasonicConstants.kTriggerChannel, UltrasonicConstants.kEchoChannel);
+
+  // Throttles the console print to ~1/sec (50 loops at the default 50Hz) instead of every loop.
+  private int m_printCounter = 0;
 
   public ObstacleSensor() {
     // Automatic mode runs the trigger/echo ping cycle in the background - without this,
@@ -24,8 +28,17 @@ public class ObstacleSensor extends SubsystemBase {
 
   @Override
   public void periodic() {
-    SmartDashboard.putNumber("Ultrasonic/DistanceInches", ultrasonic.getRangeInches());
-    SmartDashboard.putBoolean("Ultrasonic/RangeValid", ultrasonic.isRangeValid());
+    double distanceInches = ultrasonic.getRangeInches();
+    boolean rangeValid = ultrasonic.isRangeValid();
+
+    SmartDashboard.putNumber("Ultrasonic/DistanceInches", distanceInches);
+    SmartDashboard.putBoolean("Ultrasonic/RangeValid", rangeValid);
+
+    m_printCounter++;
+    if (m_printCounter % 50 == 0) {
+        RobotLog.log(String.format(
+            "Ultrasonic: distance=%.1fin valid=%b", distanceInches, rangeValid));
+    }
   }
 
   /** Most recent distance reading in inches - only meaningful once the sensor has pinged. */
