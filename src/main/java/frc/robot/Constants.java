@@ -101,7 +101,7 @@ public final class Constants {
     // (button 4) - tries each ID in order and targets whichever is found first, so if more than
     // one is visible at once the earlier ID in this list wins. Edit this array and redeploy to
     // change which tags it looks for; no runtime input for this yet.
-    public static final int[] kSearchTagIdOrder = {1, 2, 4};
+    public static final int[] kSearchTagIdOrder = {1, 2, 3, 4};
 
     // How far (meters) to stop from the target tag once approaching it - measured along the
     // ground plane (hypot of the camera-to-target transform's X/Y, ignoring the height
@@ -121,23 +121,38 @@ public final class Constants {
 
     // How many degrees the TAG ITSELF may be turned away from facing the camera head-on
     // (distinct from kAlignYawToleranceDegrees, which is about the tag's left/right position in
-    // frame, not its own facing angle) - NOT currently used; the squaring-up correction that
-    // consumed this was disabled 2026-07-23 after it caused the robot to circle the target (see
-    // RobotContainer.tagSearchAndApproachCommand()'s comments). Kept for whenever that gets
-    // rebuilt as a proper single-target-transform approach instead of independent reactive loops.
+    // frame, not its own facing angle) - re-enabled 2026-07-24 (see RobotContainer's comments on
+    // why it was disabled and why it's worth re-testing now that the camera's 3D mode is on).
     public static final double kApproachTagFaceToleranceDegrees = 15.0;
 
     // How long (seconds) the tag-search button holds station once arrived before the command
     // finishes on its own and hands control back to normal driving.
     public static final double kApproachSettleSeconds = 0.5;
 
+    // How long (seconds) to hold station (not resume spinning to search) after briefly losing
+    // sight of the current tour stop's tag, before treating it as genuinely lost and resuming
+    // the search spin / give-up sweep. Confirmed on the robot: without this, a single missed
+    // frame right as the robot was about to arrive (distance error down to ~0.03m) threw away
+    // all that progress and forced a full new 360-degree search - spinning away is exactly the
+    // wrong reaction to a target that's 99% acquired. ~5x the measured vision pipeline latency
+    // (~60ms), generous enough to ride out a brief flicker without waiting too long on a genuine
+    // loss.
+    public static final double kLostGracePeriodSeconds = 0.3;
+
     // PID gains for closing distance to the target tag (see the tag-search button). Input is
     // measured ground-plane distance (m) to the tag, setpoint is kApproachDistanceMeters, output
     // is forward speed (m/s). Conservative starting point since this is the first autonomous-
     // translation behavior on this robot (buttons 2/3 only ever touched rotation) - start
     // P-only and tune kP on the robot, same approach as kAlignRotationKP above.
-    public static final double kApproachDistanceKP = 0.5;
+    public static final double kApproachDistanceKP = 1.5;
     public static final double kApproachDistanceKI = 0.0;
+    // Kept at 0 - a nonzero kD here caused violent full-torque stop/start jitter, confirmed on
+    // the robot. Root cause: vision only delivers a fresh distance reading every ~30-60ms (one
+    // per camera frame), but PIDController.calculate() runs every 20ms loop tick regardless - the
+    // input is frozen between frames then jumps in one discrete step, which a derivative term
+    // (assuming smooth continuous sampling) reads as a huge velocity spike, producing one big
+    // corrective slam per frame instead of smooth damping. Smoothing is handled on the OUTPUT
+    // side instead (see the SlewRateLimiters in RobotContainer.tagSearchAndApproachCommand()).
     public static final double kApproachDistanceKD = 0.0;
 
     // PID gains for the lateral (strafe) correction that actually squares the robot up with the
@@ -149,11 +164,34 @@ public final class Constants {
     // negating the output in RobotContainer - see the comment there.
     public static final double kTagFaceAlignKP = 0.015;
     public static final double kTagFaceAlignKI = 0.0;
+    // Kept at 0 - same derivative-kick-on-discrete-vision-updates reasoning as
+    // kApproachDistanceKD above; smoothing is handled on the output side instead.
     public static final double kTagFaceAlignKD = 0.0;
 
     // Safety cap (m/s) on the autonomous approach speed - deliberately well below the
     // drivetrain's true top speed (~5.85 m/s) given this is new, untested autonomous-driving
     // behavior. Raise only after confirming the distance PID's sign/behavior is correct.
     public static final double kApproachMaxSpeedMps = 1.0;
+
+    // Floor (m/s) on the approach speed once actively closing distance (not yet arrived) - a
+    // P-only controller's output shrinks proportionally with error, and near the standoff
+    // distance that output can get too small for the drivetrain to actually overcome static
+    // friction, stalling just short of arriving. Same idea as
+    // OperatorConstants.kMinOutputPercent for manual driving. Direction is preserved (this floors
+    // the magnitude, not a fixed positive value) - safe to apply unconditionally while not yet
+    // arrived, since the "arrived" check overrides forwardSpeed to 0 the instant it's satisfied,
+    // regardless of this floor.
+    public static final double kApproachMinSpeedMps = 0.15;
+  }
+
+  public static class UltrasonicConstants {
+    // roboRIO DIO channel numbers - verify against actual wiring before trusting these, same as
+    // the joystick axis/button numbers in OperatorConstants. IMPORTANT: the HC-SR04's Echo pin
+    // outputs 5V logic, but roboRIO DIO inputs are only 3.3V-tolerant - a voltage divider (e.g.
+    // 1k series + 2k to ground) MUST sit between Echo and this DIO input, or it risks damaging
+    // the roboRIO. The Trig pin can go directly from a DIO output - HC-SR04 boards generally
+    // accept a 3.3V trigger HIGH fine.
+    public static final int kTriggerChannel = 0;
+    public static final int kEchoChannel = 1;
   }
 }
