@@ -142,7 +142,7 @@ public final class Constants {
     // PID gains for closing distance to the target tag (see the tag-search button). Input is
     // measured ground-plane distance (m) to the tag, setpoint is kApproachDistanceMeters, output
     // is forward speed (m/s). Conservative starting point since this is the first autonomous-
-    // translation behavior on this robot (buttons 2/3 only ever touched rotation) - start
+    // translation behavior on this robot (button 2 only ever touched rotation) - start
     // P-only and tune kP on the robot, same approach as kAlignRotationKP above.
     public static final double kApproachDistanceKP = 1.5;
     public static final double kApproachDistanceKI = 0.0;

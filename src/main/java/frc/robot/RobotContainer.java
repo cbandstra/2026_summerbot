@@ -24,7 +24,6 @@ import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
-import edu.wpi.first.wpilibj2.command.FunctionalCommand;
 import edu.wpi.first.wpilibj2.command.button.CommandJoystick;
 import edu.wpi.first.wpilibj2.command.button.RobotModeTriggers;
 
@@ -102,13 +101,7 @@ public class RobotContainer {
   // every direction regardless.
   private final Map<Integer, Rotation2d> m_lastKnownTagBearings = new HashMap<>();
 
-  // Tracks which target ID button 2 has already logged "Targeting initiated..." for during the
-  // current button hold, so it only logs on a fresh acquisition (button press with a tag already
-  // in view, the tag changing, or re-acquiring after a loss) rather than every loop. -1 means
-  // nothing logged yet this hold.
-  private int m_loggedAlignTargetId = -1;
-
-  // Tracks whether button 3 has already logged "Looking for April tags" for the current
+  // Tracks whether button 2 has already logged "Looking for April tags" for the current
   // no-target streak, so it only logs once per loss (including right at button press if nothing
   // is visible yet) rather than every loop while still searching.
   private boolean m_loggedSearching = false;
@@ -189,48 +182,10 @@ public class RobotContainer {
     m_driverController.button(OperatorConstants.kThrustmasterTriggerButton)
         .whileTrue(drivetrain.applyRequest(() -> brake));
 
-    // Hold button 2 (thumb button) to auto-rotate toward the best-seen AprilTag while
-    // driving/strafing normally - translation still comes straight from the stick (see
-    // computeTranslationVelocity), only rotation is overridden. If no tag is visible, rotation
-    // falls back to the twist stick (same as normal manual driving) so the driver isn't locked
-    // out of rotating while searching for a tag to align to. Uses FunctionalCommand instead of
-    // Commands.startRun so it has an onEnd hook to log the button release.
+    // Hold button 2 (thumb button) to spin in place looking for any AprilTag, then auto-align to
+    // it once seen. Button 3 is intentionally left unbound (2026-07-25) - this behavior used to
+    // live there.
     m_driverController.button(OperatorConstants.kThrustmasterThumbButton).whileTrue(
-        new FunctionalCommand(
-            () -> {
-                m_alignRotationController.reset();
-                m_loggedAlignTargetId = -1;
-            },
-            () -> {
-                double maxSpeed = kMaxSpeedMps * throttleSpeedPercent();
-                double[] translation = computeTranslationVelocity(maxSpeed);
-                double rotationalRate;
-                if (vision.hasTarget()) {
-                    rotationalRate = computeAlignRotationalRate();
-                    int currentId = vision.getBestTargetId();
-                    if (currentId != m_loggedAlignTargetId) {
-                        RobotLog.log("Targeting initiated for April Tag : ID " + currentId);
-                        m_loggedAlignTargetId = currentId;
-                    }
-                } else {
-                    rotationalRate = computeManualRotationalRate();
-                    m_loggedAlignTargetId = -1;
-                }
-                drivetrain.setControl(drive.withVelocityX(translation[0])
-                    .withVelocityY(translation[1])
-                    .withRotationalRate(rotationalRate));
-            },
-            interrupted -> RobotLog.log("Targeting button released"),
-            () -> false,
-            drivetrain, vision
-        )
-    );
-
-    // Hold button 3 to spin in place looking for any AprilTag, then auto-align to it once seen.
-    // Reuses m_alignRotationController - safe since button 2 and button 3 both require
-    // drivetrain/vision, so the command scheduler only ever runs one of these at a time even if
-    // both buttons are held, and startRun() resets the controller on whichever one (re)starts.
-    m_driverController.button(OperatorConstants.kThrustmasterSearchButton).whileTrue(
         Commands.startRun(
             () -> {
                 m_alignRotationController.reset();
@@ -263,9 +218,9 @@ public class RobotContainer {
     // IDs, then autonomously drives to within kApproachDistanceMeters of it once found, holds
     // there for kApproachSettleSeconds once arrived, then finishes on its own (control reverts
     // to the normal driving default command). Pressing button 4 again while it's still running
-    // cancels it early. Unlike buttons 2/3, this takes over BOTH rotation and translation - a
+    // cancels it early. Unlike button 2, this takes over BOTH rotation and translation - a
     // fully automatic "go do this" action, not a driving assist. This is the first autonomous-
-    // translation behavior on this robot (buttons 2/3 only ever touched rotation) - test
+    // translation behavior on this robot (button 2 only ever touched rotation) - test
     // cautiously (blocks first) until the distance PID's sign/behavior is confirmed correct.
     m_driverController.button(OperatorConstants.kThrustmasterTagSearchButton)
         .toggleOnTrue(tagSearchAndApproachCommand());
@@ -390,7 +345,7 @@ public class RobotContainer {
             // physically points. Confirmed on the robot with real (post-calibration) distance
             // data: commanding +approachOutput while farther than the standoff distance drove
             // AWAY from the tag, not toward it - this is the first tag-search behavior to ever
-            // drive translation (buttons 2/3 only ever used rotation), so this mismatch had no
+            // drive translation (button 2 only ever used rotation), so this mismatch had no
             // earlier chance to show up.
             double mountingCorrectedOutput = -approachOutput;
 
