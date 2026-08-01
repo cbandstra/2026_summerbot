@@ -1,5 +1,6 @@
 package frc.robot.subsystems;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.photonvision.PhotonCamera;
@@ -15,6 +16,7 @@ public class Vision extends SubsystemBase {
   private final PhotonCamera camera = new PhotonCamera(VisionConstants.kCameraName);
   private Optional<PhotonTrackedTarget> bestTarget = Optional.empty();
   private double bestTargetTimestampSeconds = 0.0;
+  private List<PhotonTrackedTarget> currentTargets = List.of();
 
   // -1 means no target. Tracked so we only log when a tag comes in/out of view, not every loop.
   private int loggedTargetId = -1;
@@ -23,6 +25,7 @@ public class Vision extends SubsystemBase {
   public void periodic() {
     for (var result : camera.getAllUnreadResults()) {
       bestTarget = result.hasTargets() ? Optional.of(result.getBestTarget()) : Optional.empty();
+      currentTargets = result.getTargets();
       if (bestTarget.isPresent()) {
         bestTargetTimestampSeconds = result.getTimestampSeconds();
       }
@@ -43,6 +46,11 @@ public class Vision extends SubsystemBase {
   /** True if an AprilTag was seen in the most recent camera frame. */
   public boolean hasTarget() {
     return bestTarget.isPresent();
+  }
+
+  /** The target with this AprilTag ID, if it was seen in the most recent camera frame. */
+  public Optional<PhotonTrackedTarget> getTargetById(int fiducialId) {
+    return currentTargets.stream().filter(t -> t.getFiducialId() == fiducialId).findFirst();
   }
 
   /** Yaw to the best-seen tag, in degrees. Positive means the tag is left of center. 0 if no target. */

@@ -58,4 +58,19 @@ public final class Constants {
     // How fast (rad/s) to spin while searching for a tag with button 2. Kept slow on purpose.
     public static final double kSearchRotationRadPerSec = 1.0;
   }
+
+  public static class AutoConstants {
+    // Speed used for every scripted "drive" step. Slow on purpose for testing.
+    public static final double kAutoDriveSpeedMps = 0.3;
+
+    // Spin rate (rad/s) used for every scripted "rotate" step.
+    public static final double kAutoRotateSpeedRadPerSec = 1.0;
+
+    // Yaw error (degrees) within which "align with april tag" counts as done.
+    public static final double kAutoAlignToleranceDegrees = 1.5;
+
+    // How long "align with april tag" searches before giving up, so a missing tag can't stall
+    // the whole autonomous sequence forever.
+    public static final double kAutoAlignTimeoutSeconds = 5.0;
+  }
 }

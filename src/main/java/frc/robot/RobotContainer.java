@@ -6,6 +6,8 @@ package frc.robot;
 
 import static edu.wpi.first.units.Units.MetersPerSecond;
 
+import java.util.List;
+
 import com.ctre.phoenix6.Utils;
 import com.ctre.phoenix6.swerve.SwerveModule.DriveRequestType;
 import com.ctre.phoenix6.swerve.SwerveRequest;
@@ -13,11 +15,14 @@ import com.ctre.phoenix6.swerve.SwerveRequest;
 import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.math.filter.SlewRateLimiter;
+import edu.wpi.first.math.geometry.Pose2d;
+import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.button.CommandJoystick;
 import edu.wpi.first.wpilibj2.command.button.RobotModeTriggers;
 
+import frc.robot.Constants.AutoConstants;
 import frc.robot.Constants.OperatorConstants;
 import frc.robot.Constants.VisionConstants;
 import frc.robot.generated.TunerConstants;
@@ -45,8 +50,12 @@ public class RobotContainer {
 
   private final Telemetry logger = new Telemetry(kMaxSpeedMps);
 
-  // Turns the robot to face the best-seen AprilTag (button 2). Input/output: yaw error in
-  // degrees, rad/s out.
+  // Autonomous instructions parsed from deploy/autonomous.json. Loaded once here so a typo
+  // shows up in the console right away instead of hiding until autonomous actually starts.
+  private final List<AutoStep> m_autoSteps = AutoScript.load();
+
+  // Turns the robot to face an AprilTag - shared by button 2 and the "align with april tag"
+  // autonomous instruction. Input/output: yaw error in degrees, rad/s out.
   private final PIDController m_alignRotationController = new PIDController(
       VisionConstants.kAlignRotationKP,
       VisionConstants.kAlignRotationKI,
@@ -72,6 +81,13 @@ public class RobotContainer {
       .withRotationalDeadband(0)
       .withDriveRequestType(DriveRequestType.OpenLoopVoltage);
   private final SwerveRequest.SwerveDriveBrake brake = new SwerveRequest.SwerveDriveBrake();
+
+  // Robot-centric drive request used for autonomous steps - "forward" means the robot's own
+  // front, not a field direction.
+  private final SwerveRequest.RobotCentric autoDrive = new SwerveRequest.RobotCentric()
+      .withDeadband(0)
+      .withRotationalDeadband(0)
+      .withDriveRequestType(DriveRequestType.OpenLoopVoltage);
 
   public RobotContainer() {
     configureBindings();
@@ -148,8 +164,11 @@ public class RobotContainer {
    * already turns toward the target, so no extra sign flip is needed here.
    */
   private double computeAlignRotationalRate() {
-    double compensatedYawDegrees = computeCompensatedYawDegrees(
-        vision.getTargetYawDegrees(), vision.getTargetTimestampSeconds());
+    return computeAlignRotationalRate(vision.getTargetYawDegrees(), vision.getTargetTimestampSeconds());
+  }
+
+  private double computeAlignRotationalRate(double rawYawDegrees, double frameTimestampSeconds) {
+    double compensatedYawDegrees = computeCompensatedYawDegrees(rawYawDegrees, frameTimestampSeconds);
     return MathUtil.clamp(
         m_alignRotationController.calculate(compensatedYawDegrees, 0.0),
         -kMaxAngularRate, kMaxAngularRate
@@ -223,13 +242,126 @@ public class RobotContainer {
     return new double[] {unitX * outputSpeed, unitY * outputSpeed};
   }
 
+  /** Turns an AutoStep into a runnable Command using the robot's own subsystems. */
+  private Command autoStepCommand(AutoStep step) {
+    if (step instanceof AutoStep.Drive drive) {
+        return driveStepCommand(drive);
+    } else if (step instanceof AutoStep.Rotate rotate) {
+        return rotateCommand(rotate.degrees());
+    } else if (step instanceof AutoStep.Wait wait) {
+        return Commands.waitSeconds(wait.seconds());
+    } else if (step instanceof AutoStep.AlignTag alignTag) {
+        return alignToTagCommand(alignTag.tagId());
+    }
+    throw new IllegalStateException("Unhandled AutoStep: " + step);
+  }
+
+  /** Turns a "drive <direction> <distance>" step into robot-centric velocityX/velocityY. */
+  private Command driveStepCommand(AutoStep.Drive step) {
+    double speed = AutoConstants.kAutoDriveSpeedMps;
+    // Negated: confirmed backwards on the robot (2026-08-01) - commanding +velocityX on this
+    // RobotCentric request drove the chassis backward, not forward. Left/right (velocityY) is
+    // not yet confirmed either way - test it before trusting "drive left"/"drive right".
+    double vx = switch (step.direction()) {
+        case FORWARD -> -speed;
+        case BACKWARD -> speed;
+        default -> 0.0;
+    };
+    double vy = switch (step.direction()) {
+        case LEFT -> speed;
+        case RIGHT -> -speed;
+        default -> 0.0;
+    };
+    return driveDistanceCommand(vx, vy, step.distanceMeters());
+  }
+
   /**
-   * Command to run in autonomous. No autonomous routine is wired up - {@link Robot} skips
-   * scheduling when this is null.
+   * Drives straight (robot-centric) at {@code (vxMps, vyMps)} until the robot has moved
+   * {@code distanceMeters} from where this command started, then stops. Distance is measured
+   * from odometry.
+   */
+  private Command driveDistanceCommand(double vxMps, double vyMps, double distanceMeters) {
+    Pose2d[] startPose = {null};
+    return Commands.sequence(
+        Commands.runOnce(() -> startPose[0] = drivetrain.getState().Pose, drivetrain),
+        Commands.run(() -> drivetrain.setControl(autoDrive.withVelocityX(vxMps).withVelocityY(vyMps)), drivetrain)
+            .until(() -> startPose[0].getTranslation()
+                .getDistance(drivetrain.getState().Pose.getTranslation()) >= distanceMeters),
+        Commands.runOnce(() -> drivetrain.setControl(autoDrive.withVelocityX(0).withVelocityY(0)), drivetrain)
+    );
+  }
+
+  /**
+   * Turns in place by {@code degrees} (positive = counterclockwise) and stops. Tracks how far
+   * it's actually turned via odometry (added up loop by loop) rather than time, so it works for
+   * any angle, including more than 180 degrees, without getting confused by heading wraparound.
+   */
+  private Command rotateCommand(double degrees) {
+    double targetRadians = Math.toRadians(Math.abs(degrees));
+    double spinRate = Math.signum(degrees)
+        * Math.min(AutoConstants.kAutoRotateSpeedRadPerSec, kMaxAngularRate);
+
+    Rotation2d[] lastHeading = {null};
+    double[] turnedRadians = {0.0};
+
+    return Commands.sequence(
+        Commands.runOnce(() -> {
+            lastHeading[0] = drivetrain.getState().Pose.getRotation();
+            turnedRadians[0] = 0.0;
+        }, drivetrain),
+        Commands.run(() -> {
+            Rotation2d currentHeading = drivetrain.getState().Pose.getRotation();
+            turnedRadians[0] += Math.abs(currentHeading.minus(lastHeading[0]).getRadians());
+            lastHeading[0] = currentHeading;
+            drivetrain.setControl(autoDrive.withVelocityX(0).withVelocityY(0).withRotationalRate(spinRate));
+        }, drivetrain).until(() -> turnedRadians[0] >= targetRadians),
+        Commands.runOnce(() -> drivetrain.setControl(
+            autoDrive.withVelocityX(0).withVelocityY(0).withRotationalRate(0)), drivetrain)
+    );
+  }
+
+  /**
+   * Spins to search for AprilTag {@code tagId}, then turns to face it once seen, finishing once
+   * aligned within {@link AutoConstants#kAutoAlignToleranceDegrees}. Gives up after {@link
+   * AutoConstants#kAutoAlignTimeoutSeconds} if the tag is never found, so a missing tag can't
+   * stall the rest of the autonomous sequence forever.
+   */
+  private Command alignToTagCommand(int tagId) {
+    double[] lastYawErrorDegrees = {Double.MAX_VALUE};
+
+    return Commands.sequence(
+        Commands.runOnce(() -> m_alignRotationController.reset(), drivetrain),
+        Commands.run(() -> {
+            var target = vision.getTargetById(tagId);
+            double rotationalRate;
+            if (target.isPresent()) {
+                double rawYawDegrees = target.get().getYaw();
+                lastYawErrorDegrees[0] = computeCompensatedYawDegrees(rawYawDegrees, vision.getTargetTimestampSeconds());
+                rotationalRate = computeAlignRotationalRate(rawYawDegrees, vision.getTargetTimestampSeconds());
+            } else {
+                lastYawErrorDegrees[0] = Double.MAX_VALUE;
+                rotationalRate = Math.min(VisionConstants.kSearchRotationRadPerSec, kMaxAngularRate);
+            }
+            drivetrain.setControl(autoDrive.withVelocityX(0).withVelocityY(0).withRotationalRate(rotationalRate));
+        }, drivetrain, vision)
+            .until(() -> Math.abs(lastYawErrorDegrees[0]) <= AutoConstants.kAutoAlignToleranceDegrees)
+            .withTimeout(AutoConstants.kAutoAlignTimeoutSeconds),
+        Commands.runOnce(() -> drivetrain.setControl(
+            autoDrive.withVelocityX(0).withVelocityY(0).withRotationalRate(0)), drivetrain)
+    );
+  }
+
+  /**
+   * Command to run in autonomous, built from the instructions in deploy/autonomous.json (see
+   * README.md for the supported instructions). Returns null (nothing runs) if that file is
+   * missing or has a mistake in it - {@link Robot} skips scheduling when this is null.
    *
    * @return the command to run in autonomous, or null for none
    */
   public Command getAutonomousCommand() {
-    return null;
+    if (m_autoSteps.isEmpty()) {
+        return null;
+    }
+    return Commands.sequence(m_autoSteps.stream().map(this::autoStepCommand).toArray(Command[]::new));
   }
 }
