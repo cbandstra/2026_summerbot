@@ -67,11 +67,6 @@ public class Vision extends SubsystemBase {
     return bestTarget.isPresent();
   }
 
-  /** Fiducial ID of PhotonVision's overall "best" target, or -1 if none is visible. */
-  public int getBestTargetId() {
-    return bestTarget.map(PhotonTrackedTarget::getFiducialId).orElse(-1);
-  }
-
   /**
    * Yaw of the best-seen AprilTag relative to the camera's center, in degrees. Positive is
    * counter-clockwise (target to the left of center), per PhotonVision's standard math

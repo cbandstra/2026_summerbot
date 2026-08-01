@@ -31,7 +31,6 @@ import frc.robot.Constants.OperatorConstants;
 import frc.robot.Constants.VisionConstants;
 import frc.robot.generated.TunerConstants;
 import frc.robot.subsystems.CommandSwerveDrivetrain;
-// import frc.robot.subsystems.ObstacleSensor;
 import frc.robot.subsystems.Vision;
 
 /**
@@ -54,15 +53,12 @@ public class RobotContainer {
 
   // Rotation has no slider control, so this stays a fixed fraction of the drivetrain's true top
   // rotational speed (see OperatorConstants.kMaxRotationOutputPercent).
-  private double MaxAngularRate = (kMaxSpeedMps / kDriveBaseRadiusMeters) * OperatorConstants.kMaxRotationOutputPercent;
+  private static final double kMaxAngularRate =
+      (kMaxSpeedMps / kDriveBaseRadiusMeters) * OperatorConstants.kMaxRotationOutputPercent;
 
   // The robot's subsystems and commands are defined here...
   public final CommandSwerveDrivetrain drivetrain = TunerConstants.createDrivetrain();
   public final Vision vision = new Vision();
-  // No avoidance behavior wired up yet - just publishes distance readings to the dashboard so
-  // wiring/orientation can be confirmed first (see Constants.UltrasonicConstants for the
-  // required voltage divider on the Echo line).
-//   public final ObstacleSensor obstacleSensor = new ObstacleSensor();
 
   private final Telemetry logger = new Telemetry(kMaxSpeedMps);
 
@@ -92,13 +88,11 @@ public class RobotContainer {
       VisionConstants.kTagFaceAlignKD
   );
 
-  // Field-relative heading (absolute, not robot-relative) each AprilTag ID was last seen at,
-  // keyed by fiducial ID - persists across separate tag-search-and-approach runs (a class field,
-  // not local to tagSearchAndApproachCommand()) so a later search for the same ID can start by
-  // turning the shorter way toward it instead of always sweeping the same fixed direction. Only
-  // ever written to, never cleared - a stale entry just means a possibly-wrong first guess at
-  // search direction, not a correctness problem, since the full-360 give-up sweep still covers
-  // every direction regardless.
+  // Field-relative heading each AprilTag ID was last seen at, keyed by fiducial ID. A class field
+  // (not local to tagSearchAndApproachCommand()) so it persists across runs: a later search for
+  // the same ID can start by turning the shorter way toward it. Never cleared - a stale entry is
+  // just a worse first guess at search direction, not a correctness problem, since the full-360
+  // give-up sweep covers every direction anyway.
   private final Map<Integer, Rotation2d> m_lastKnownTagBearings = new HashMap<>();
 
   // Tracks whether button 2 has already logged "Looking for April tags" for the current
@@ -110,12 +104,10 @@ public class RobotContainer {
   private final CommandJoystick m_driverController =
       new CommandJoystick(OperatorConstants.kDriverControllerPort);
 
-  // Smooths raw joystick axis noise (flight stick pots are noisier than a gamepad's) before it
-  // reaches the module angle calculation. Units are axis-units/sec - 3.0 means it takes about
-  // 1/3 second to sweep from center to full deflection. Without this, small pot jitter around a
-  // steady input (e.g. holding mostly-forward with a slight strafe) can flicker the commanded
-  // module angle by a fraction of a degree every loop, which the steer motor faithfully chases -
-  // audible as chatter even though the control loop itself is behaving correctly.
+  // Smooths raw joystick axis noise (flight stick pots are noisier than a gamepad's) before the
+  // module-angle calculation. Units are axis-units/sec - 3.0 sweeps center to full in ~1/3 s.
+  // Without it, pot jitter around a steady input flickers the commanded module angle every loop,
+  // which the steer motor faithfully chases - audible as chatter even though the loop is fine.
   private final SlewRateLimiter m_xLimiter = new SlewRateLimiter(3.0);
   private final SlewRateLimiter m_yLimiter = new SlewRateLimiter(3.0);
   private final SlewRateLimiter m_rotLimiter = new SlewRateLimiter(3.0);
@@ -203,7 +195,7 @@ public class RobotContainer {
                         RobotLog.log("Looking for April tags");
                         m_loggedSearching = true;
                     }
-                    rotationalRate = Math.min(VisionConstants.kSearchRotationRadPerSec, MaxAngularRate);
+                    rotationalRate = Math.min(VisionConstants.kSearchRotationRadPerSec, kMaxAngularRate);
                 }
                 drivetrain.setControl(drive.withVelocityX(translation[0])
                     .withVelocityY(translation[1])
@@ -312,7 +304,7 @@ public class RobotContainer {
                 seenTarget.getYaw(), vision.getTargetTimestampSeconds());
             rotationalRate = MathUtil.clamp(
                 m_alignRotationController.calculate(compensatedYawDegrees, 0.0),
-                -MaxAngularRate, MaxAngularRate
+                -kMaxAngularRate, kMaxAngularRate
             );
 
             // Remember roughly where this tag is (field-relative) so a future search for the
@@ -434,7 +426,7 @@ public class RobotContainer {
                 }
 
                 rotationalRate = searchDirection[0]
-                    * Math.min(VisionConstants.kSearchRotationRadPerSec, MaxAngularRate);
+                    * Math.min(VisionConstants.kSearchRotationRadPerSec, kMaxAngularRate);
                 forwardSpeed = 0.0;
             }
 
@@ -530,24 +522,12 @@ public class RobotContainer {
   }
 
   /**
-   * Rotational rate (rad/s, clamped to MaxAngularRate) to turn the robot toward the best-seen
-   * AprilTag, latency-compensated. The camera frame behind {@link Vision#getTargetYawDegrees()}
-   * is always some pipeline/network latency old (measured ~60ms on this rig) - by the time it's
-   * read here, the robot has kept rotating for that whole delay, so reacting to the raw yaw as if
-   * it were current causes a real overshoot (robot turns past where the tag actually is "now").
-   * This corrects for that using {@link CommandSwerveDrivetrain#samplePoseAt}, which reconstructs
-   * the robot's own heading at the frame's capture timestamp from its odometry history: the
-   * difference between that historical heading and the current one is exactly how far the robot
-   * has rotated since the frame was taken, which gets subtracted back out of the raw yaw. Falls
-   * back to the raw (uncompensated) yaw if the odometry buffer doesn't reach back that far (e.g.
-   * right at startup). PhotonVision's timestamp is in the FPGA/NT4 epoch, but samplePoseAt()
-   * expects CTRE's own {@code Utils.getCurrentTimeSeconds()} epoch - those are different clocks
-   * in Phoenix 6, so the timestamp must go through {@link Utils#fpgaToCurrentTime} first or
-   * samplePoseAt() just returns empty every time and this silently does nothing.
+   * Rotational rate (rad/s, clamped to kMaxAngularRate) to turn toward the best-seen AprilTag,
+   * latency-compensated (see {@link #computeCompensatedYawDegrees}).
    *
    * <p>Confirmed on the robot: this camera/mount needs the raw (non-negated) yaw sign to turn
-   * toward the target rather than away from it - both PhotonVision's yaw and WPILib's Rotation2d
-   * use the same positive-CCW convention, so this compensation needs no extra sign flip either.
+   * toward the target rather than away from it - PhotonVision's yaw and WPILib's Rotation2d share
+   * the positive-CCW convention, so no extra sign flip is needed here.
    */
   private double computeAlignRotationalRate() {
     return computeAlignRotationalRate(vision.getTargetYawDegrees(), vision.getTargetTimestampSeconds());
@@ -563,16 +543,24 @@ public class RobotContainer {
     double compensatedYawDegrees = computeCompensatedYawDegrees(rawYawDegrees, frameTimestampSeconds);
     return MathUtil.clamp(
         m_alignRotationController.calculate(compensatedYawDegrees, 0.0),
-        -MaxAngularRate, MaxAngularRate
+        -kMaxAngularRate, kMaxAngularRate
     );
   }
 
   /**
-   * The latency-compensation math shared by both {@link #computeAlignRotationalRate(double,
-   * double)} and the tag-search-and-approach button (button 4), which also needs the compensated
-   * yaw value itself (not just the resulting rotational rate) to gate forward approach speed on
-   * how squared-up the robot currently is. See computeAlignRotationalRate's javadoc for why this
-   * compensation is needed and the FPGA/CTRE epoch conversion it depends on.
+   * Latency-compensates a raw camera yaw (deg). The frame it came from is always some
+   * pipeline/network latency old (~60ms on this rig), during which the robot kept rotating, so
+   * reacting to the raw yaw as if it were current overshoots. {@link
+   * CommandSwerveDrivetrain#samplePoseAt} reconstructs the robot's heading at the frame's capture
+   * time from odometry history; the difference from the current heading is how far it has rotated
+   * since, which is subtracted back out. Falls back to the raw yaw if odometry doesn't reach back
+   * that far (e.g. at startup).
+   *
+   * <p>PhotonVision's timestamp is in the FPGA/NT4 epoch, but samplePoseAt() expects CTRE's
+   * {@code Utils.getCurrentTimeSeconds()} epoch - different clocks in Phoenix 6, so it must go
+   * through {@link Utils#fpgaToCurrentTime} first or samplePoseAt() returns empty every time and
+   * this silently does nothing. Shared by {@link #computeAlignRotationalRate(double, double)} and
+   * the button-4 approach, which also gates forward speed on the compensated yaw.
    */
   private double computeCompensatedYawDegrees(double rawYawDegrees, double frameTimestampSeconds) {
     var historicalPose = drivetrain.samplePoseAt(Utils.fpgaToCurrentTime(frameTimestampSeconds));
@@ -593,7 +581,7 @@ public class RobotContainer {
    * below {@link OperatorConstants#kRotationDeadband}, output is zero; above it, the response is
    * raised to {@link OperatorConstants#kRotationCurveExponent} so small twists produce
    * proportionally less rotation than a linear mapping would, while full deflection still
-   * reaches {@code MaxAngularRate}.
+   * reaches {@code kMaxAngularRate}.
    */
   private double computeManualRotationalRate() {
     double stickTwist = -m_rotLimiter.calculate(m_driverController.getRawAxis(OperatorConstants.kThrustmasterTwistAxis)); // CCW is stick twisted left (negative twist)
@@ -605,7 +593,7 @@ public class RobotContainer {
 
     double stickFraction = Math.min(stickMagnitude, 1.0);
     double curvedFraction = Math.pow(stickFraction, OperatorConstants.kRotationCurveExponent);
-    return Math.signum(stickTwist) * curvedFraction * MaxAngularRate;
+    return Math.signum(stickTwist) * curvedFraction * kMaxAngularRate;
   }
 
   /**
