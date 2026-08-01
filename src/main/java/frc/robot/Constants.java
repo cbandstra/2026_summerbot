@@ -30,6 +30,12 @@ public final class Constants {
     public static final int kThrustmasterSearchButton = 3;
     public static final int kThrustmasterTagSearchButton = 4;
 
+    // Waypoint save/recall/clear trio (see RobotContainer's button bindings) - 5 saves the
+    // robot's current pose, 6 drives back to whatever's saved, 7 clears it.
+    public static final int kThrustmasterSaveWaypointButton = 5;
+    public static final int kThrustmasterGoToWaypointButton = 6;
+    public static final int kThrustmasterClearWaypointButton = 7;
+
     // Deadband is a fraction of the CURRENT slider-selected top speed - below this much stick
     // deflection, translation output is zero, regardless of where the slider is set.
     public static final double kTranslationDeadband = 0.10;
@@ -72,11 +78,71 @@ public final class Constants {
     // top rotational speed, higher than the slider's minimum translation cap since spinning in
     // place is inherently less dangerous than driving into something at speed.
     public static final double kMaxRotationOutputPercent = .3;
+
+    // PID gains for the POV-commanded rotate-to-heading behavior (see RobotContainer's POV
+    // bindings) - input/setpoint are the robot's field-relative heading in degrees (continuous,
+    // wraps at +/-180), output is rad/s. Same P-only starting point and units convention as
+    // VisionConstants.kAlignRotationKP - start with P-only and tune kP on the robot.
+    public static final double kHeadingHoldKP = 0.1;  //was 0.06
+    public static final double kHeadingHoldKI = 0.0;
+    public static final double kHeadingHoldKD = 0.0;
+
+    // Behavior constants for the drive-the-path button (6) - see RobotContainer's
+    // driveWaypointPathCommand(). Only the FINAL waypoint in the list gets a precise stop: it
+    // uses this distance-based proportional speed, same shape as VisionConstants' approach-
+    // distance gains (output shrinks with remaining distance, floored so it doesn't stall short,
+    // capped at a conservative top speed since this is odometry-only autonomous translation), and
+    // must also match heading within kWaypointHeadingToleranceDegrees before the command finishes.
+    public static final double kWaypointDistanceKP = 1.0; // (m/s) per meter of remaining distance
+    public static final double kWaypointMaxSpeedMps = 1.0;
+    public static final double kWaypointMinSpeedMps = 0.15;
+    public static final double kWaypointDistanceToleranceMeters = 0.05; // ~2 inches
+    public static final double kWaypointHeadingToleranceDegrees = 2.0;
+
+    // Every waypoint BEFORE the final one is a fast pass-through, not a stop: the robot cruises
+    // straight at kWaypointMaxSpeedMps and advances to the next waypoint once within this (looser)
+    // radius, with no heading-tolerance gate at all. Recorded waypoints are only
+    // kWaypointRecordMinIntervalMeters (~6in) apart, so requiring the same precise position+
+    // heading convergence used for the final stop at EVERY one of them meant the robot spent most
+    // of its time doing tiny corrective rotations to settle heading at each point instead of
+    // actually covering distance - this is what made the path crawl at ~1 inch/second. Kept
+    // smaller than the recording interval so consecutive points still get roughly followed rather
+    // than skipped/cut across.
+    public static final double kWaypointPassThroughToleranceMeters = 0.1; // ~4 inches
+
+    // Minimum distance (meters) the robot must move since the last recorded waypoint before
+    // button 5 (held to record) appends another one - see RobotContainer.recordWaypointCommand().
+    // Without a minimum, holding the button while driving at ~50Hz would record a waypoint almost
+    // every 20ms loop tick, and driveWaypointPathCommand()'s point-to-point convergence (stop,
+    // settle within tolerance, move to next point) would then crawl through hundreds of nearly-
+    // identical points instead of tracing one smooth-ish path.
+    public static final double kWaypointRecordMinIntervalMeters = 0.15; // ~6 inches
   }
 
   public static class VisionConstants {
-    // Name assigned to the C920 in the PhotonVision web UI's Cameras tab - must match exactly.
-    public static final String kCameraName = "C920_1";
+    // Names assigned to the two C920s in the PhotonVision web UI's Cameras tab - must match
+    // exactly. Confirmed by the team (not measured/derived from code): rear is mounted directly
+    // opposite (180 degrees) from front. Note "front cam" was ALREADY established (see the
+    // mounting-correction comment in RobotContainer.tagSearchAndApproachCommand()) to face the
+    // drivetrain's kinematic "back" (RobotCentric's -X, opposite the module-geometry-defined
+    // front) - confusingly named relative to the drivetrain's own axes, but that's exactly why
+    // approaching a "front cam" sighting already needed a sign flip before the rear camera ever
+    // existed. Since rear is 180 degrees from front, it therefore faces the SAME direction as
+    // RobotCentric's +X and needs the OPPOSITE sign - see fromRearCamera's use in
+    // tagSearchAndApproachCommand().
+    public static final String kFrontCameraName = "front cam";
+    public static final String kRearCameraName = "rear camera";
+
+    // How many degrees the rear camera's mounting is rotated from the front camera's - used only
+    // to correct the FIELD-RELATIVE remembered-bearing bookkeeping in
+    // RobotContainer.m_lastKnownTagBearings when a rear-camera sighting is what updates it (a
+    // sighting's yaw error is relative to WHICHEVER camera saw it, so it needs this offset added
+    // in before it means anything in field/robot-heading terms). This is a soft heuristic input
+    // (a wrong value only makes a future search start turning the "wrong" first guess, not an
+    // actual correctness problem - the full 360-degree give-up sweep still covers every
+    // direction), unlike the approach translation sign correction, which needs to be exactly
+    // right.
+    public static final double kRearCameraMountOffsetDegrees = 180.0;
 
     // PID gains for rotating the robot to center the best-seen AprilTag in frame (see
     // RobotContainer's button 2 binding). Input/setpoint are yaw error in degrees, output is
@@ -106,8 +172,8 @@ public final class Constants {
     // How far (meters) to stop from the target tag once approaching it - measured along the
     // ground plane (hypot of the camera-to-target transform's X/Y, ignoring the height
     // difference between camera and tag) rather than full 3D line-of-sight distance, since
-    // "32 inches away" means 32 inches away on the floor, not slant distance.
-    public static final double kApproachDistanceMeters = 0.8128; // 32 inches
+    // "24 inches away" means 24 inches away on the floor, not slant distance.
+    public static final double kApproachDistanceMeters = 0.6096; // 24 inches
 
     // The tag-search button won't start closing distance until the (latency-compensated) yaw
     // error is within this many degrees of dead-center - keeps it from driving toward the tag at
@@ -184,14 +250,33 @@ public final class Constants {
     public static final double kApproachMinSpeedMps = 0.15;
   }
 
+  public static class AutoConstants {
+    // Side length (meters) of the closed square path driven by the "3x3 ft Square" autonomous
+    // mode (see RobotContainer.autoSquareCommand()) - 3 feet per side.
+    public static final double kSquareSideMeters = 0.9144; // 3 feet
+
+    // Fixed translation speed (m/s) for each leg of the square path - conservative since this,
+    // like the tag-search-and-approach routine, drives purely off odometry with no vision/
+    // absolute correction mid-leg. A slower speed also means less accumulated drift by the time
+    // all 4 legs finish and the robot is expected to be back at its starting position.
+    public static final double kSquareSpeedMps = 0.5;
+  }
+
   public static class UltrasonicConstants {
     // roboRIO DIO channel numbers - verify against actual wiring before trusting these, same as
     // the joystick axis/button numbers in OperatorConstants. IMPORTANT: the HC-SR04's Echo pin
     // outputs 5V logic, but roboRIO DIO inputs are only 3.3V-tolerant - a voltage divider (e.g.
     // 1k series + 2k to ground) MUST sit between Echo and this DIO input, or it risks damaging
     // the roboRIO. The Trig pin can go directly from a DIO output - HC-SR04 boards generally
-    // accept a 3.3V trigger HIGH fine.
-    public static final int kTriggerChannel = 0;
-    public static final int kEchoChannel = 1;
+    // accept a 3.3V trigger HIGH fine. 
+    public static final int kTriggerChannel = 0; //green wire
+    public static final int kEchoChannel = 1; // blue wire
+
+    // Once something is closer than this (see ObstacleSensor.isObstacleTooClose()), sideways
+    // translation is blocked and the driving stick's forward component is clamped to zero,
+    // leaving only turning and driving backward - see RobotContainer.computeTranslationVelocity().
+    // Turning is untouched regardless of this reading, since only forward/sideways motion risks
+    // closing distance with whatever tripped the sensor.
+    public static final double kObstacleStopDistanceInches = 6;
   }
 }

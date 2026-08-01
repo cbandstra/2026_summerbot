@@ -45,4 +45,17 @@ public class ObstacleSensor extends SubsystemBase {
   public double getDistanceInches() {
     return ultrasonic.getRangeInches();
   }
+
+  /**
+   * True if something is currently closer than {@link UltrasonicConstants#kObstacleStopDistanceInches}.
+   * A reading of exactly 0.0 inches is treated as "no obstacle" rather than "touching the
+   * sensor" - the HC-SR04 (and WPILib's Ultrasonic wrapper) reports 0 when it hasn't gotten a
+   * valid echo back yet (e.g. right at startup, before the first ping/response cycle completes),
+   * not as a real zero-distance measurement, so treating it as a genuine obstacle would block
+   * driving before the sensor has ever produced a real reading.
+   */
+  public boolean isObstacleTooClose() {
+    double distanceInches = getDistanceInches();
+    return distanceInches != 0.0 && distanceInches < UltrasonicConstants.kObstacleStopDistanceInches;
+  }
 }

@@ -34,11 +34,11 @@ public class Telemetry {
     public Telemetry(double maxSpeed) {
         MaxSpeed = maxSpeed;
         SignalLogger.start();
-
-        /* Set up the module state Mechanism2d telemetry */
-        for (int i = 0; i < 4; ++i) {
-            SmartDashboard.putData("Module " + i, m_moduleMechanisms[i]);
-        }
+        // Module state Mechanism2d widgets are set up lazily in telemeterize() instead of here -
+        // the module count isn't known until the first SwerveDriveState arrives (see
+        // initModuleMechanisms()), so this works whether the drivetrain has 4 modules or, as of
+        // 2026-07-25, only the 2 (FrontRight/BackLeft) currently wired up - see
+        // TunerConstants.createDrivetrain().
     }
 
     /* What to publish over networktables for telemetry */
@@ -59,31 +59,13 @@ public class Telemetry {
     private final DoubleArrayPublisher fieldPub = table.getDoubleArrayTopic("Robot").publish();
     private final StringPublisher fieldTypePub = table.getStringTopic(".type").publish();
 
-    /* Mechanisms to represent the swerve module states */
-    private final Mechanism2d[] m_moduleMechanisms = new Mechanism2d[] {
-        new Mechanism2d(1, 1),
-        new Mechanism2d(1, 1),
-        new Mechanism2d(1, 1),
-        new Mechanism2d(1, 1),
-    };
+    /* Mechanisms to represent the swerve module states - sized/built lazily once the actual
+     * module count is known; see initModuleMechanisms(). */
+    private Mechanism2d[] m_moduleMechanisms;
     /* A direction and length changing ligament for speed representation */
-    private final MechanismLigament2d[] m_moduleSpeeds = new MechanismLigament2d[] {
-        m_moduleMechanisms[0].getRoot("RootSpeed", 0.5, 0.5).append(new MechanismLigament2d("Speed", 0.5, 0)),
-        m_moduleMechanisms[1].getRoot("RootSpeed", 0.5, 0.5).append(new MechanismLigament2d("Speed", 0.5, 0)),
-        m_moduleMechanisms[2].getRoot("RootSpeed", 0.5, 0.5).append(new MechanismLigament2d("Speed", 0.5, 0)),
-        m_moduleMechanisms[3].getRoot("RootSpeed", 0.5, 0.5).append(new MechanismLigament2d("Speed", 0.5, 0)),
-    };
+    private MechanismLigament2d[] m_moduleSpeeds;
     /* A direction changing and length constant ligament for module direction */
-    private final MechanismLigament2d[] m_moduleDirections = new MechanismLigament2d[] {
-        m_moduleMechanisms[0].getRoot("RootDirection", 0.5, 0.5)
-            .append(new MechanismLigament2d("Direction", 0.1, 0, 0, new Color8Bit(Color.kWhite))),
-        m_moduleMechanisms[1].getRoot("RootDirection", 0.5, 0.5)
-            .append(new MechanismLigament2d("Direction", 0.1, 0, 0, new Color8Bit(Color.kWhite))),
-        m_moduleMechanisms[2].getRoot("RootDirection", 0.5, 0.5)
-            .append(new MechanismLigament2d("Direction", 0.1, 0, 0, new Color8Bit(Color.kWhite))),
-        m_moduleMechanisms[3].getRoot("RootDirection", 0.5, 0.5)
-            .append(new MechanismLigament2d("Direction", 0.1, 0, 0, new Color8Bit(Color.kWhite))),
-    };
+    private MechanismLigament2d[] m_moduleDirections;
 
     private final double[] m_poseArray = new double[3];
 
@@ -105,6 +87,10 @@ public class Telemetry {
 
     /** Accept the swerve drive state and telemeterize it to SmartDashboard and SignalLogger. */
     public void telemeterize(SwerveDriveState state) {
+        if (m_moduleMechanisms == null) {
+            initModuleMechanisms(state.ModuleStates.length);
+        }
+
         logMotionChanges(state.Speeds);
 
         /* Telemeterize the swerve drive state */
@@ -134,10 +120,31 @@ public class Telemetry {
         fieldPub.set(m_poseArray);
 
         /* Telemeterize each module state to a Mechanism2d */
-        for (int i = 0; i < 4; ++i) {
+        for (int i = 0; i < m_moduleMechanisms.length; ++i) {
             m_moduleSpeeds[i].setAngle(state.ModuleStates[i].angle);
             m_moduleDirections[i].setAngle(state.ModuleStates[i].angle);
             m_moduleSpeeds[i].setLength(state.ModuleStates[i].speedMetersPerSecond / (2 * MaxSpeed));
+        }
+    }
+
+    /**
+     * Builds the per-module Mechanism2d dashboard widgets, sized to however many modules the
+     * drivetrain actually reports - not hardcoded to 4, since as of 2026-07-25 only 2 modules
+     * (FrontRight/BackLeft) are wired up (see TunerConstants.createDrivetrain()). Deferred until
+     * the first {@link #telemeterize} call because the module count isn't known any earlier than
+     * that (the constructor only receives MaxSpeed).
+     */
+    private void initModuleMechanisms(int moduleCount) {
+        m_moduleMechanisms = new Mechanism2d[moduleCount];
+        m_moduleSpeeds = new MechanismLigament2d[moduleCount];
+        m_moduleDirections = new MechanismLigament2d[moduleCount];
+        for (int i = 0; i < moduleCount; ++i) {
+            m_moduleMechanisms[i] = new Mechanism2d(1, 1);
+            m_moduleSpeeds[i] = m_moduleMechanisms[i].getRoot("RootSpeed", 0.5, 0.5)
+                .append(new MechanismLigament2d("Speed", 0.5, 0));
+            m_moduleDirections[i] = m_moduleMechanisms[i].getRoot("RootDirection", 0.5, 0.5)
+                .append(new MechanismLigament2d("Direction", 0.1, 0, 0, new Color8Bit(Color.kWhite)));
+            SmartDashboard.putData("Module " + i, m_moduleMechanisms[i]);
         }
     }
 

@@ -251,10 +251,17 @@ public class TunerConstants {
     /**
      * Creates a CommandSwerveDrivetrain instance.
      * This should only be called once in your robot program.
+     *
+     * <p>Only FrontLeft and BackRight are wired in below (2026-07-25) - the FrontRight and
+     * BackLeft modules are physically disconnected from this chassis right now. Diagonal
+     * two-module kinematics is well-determined (WPILib's {@code SwerveDriveKinematics} solves
+     * forward/inverse kinematics for any N &gt;= 2 module layout), so translation and rotation
+     * both still work, but odometry/traction will be noticeably worse than with all 4 modules -
+     * re-add {@code FrontRight, BackLeft} to the argument list below once they're reconnected.
      */
     public static CommandSwerveDrivetrain createDrivetrain() {
         return new CommandSwerveDrivetrain(
-            DrivetrainConstants, FrontLeft, FrontRight, BackLeft, BackRight
+            DrivetrainConstants, FrontLeft, BackRight
         );
     }
 
