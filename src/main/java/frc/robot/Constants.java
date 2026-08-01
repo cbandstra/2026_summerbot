@@ -76,7 +76,7 @@ public final class Constants {
 
   public static class VisionConstants {
     // Name assigned to the C920 in the PhotonVision web UI's Cameras tab - must match exactly.
-    public static final String kCameraName = "C920_1";
+    public static final String kCameraName = "front cam";
 
     // PID gains for rotating the robot to center the best-seen AprilTag in frame (see
     // RobotContainer's button 2 binding). Input/setpoint are yaw error in degrees, output is
