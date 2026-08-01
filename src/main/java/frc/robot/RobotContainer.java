@@ -52,11 +52,12 @@ public class RobotContainer {
   // in place. Used to convert the drivetrain's true top translational speed into its true top
   // rotational speed (rad/s = m/s / radius), so the rotation safety cap below is scaled from the
   // same physical ceiling as the translation cap instead of an arbitrary fixed rotation rate.
-  // Read from FrontLeft since only FrontLeft/BackRight are actually wired up right now (see
+  // Read from FrontRight since only FrontRight/BackLeft are actually wired up right now (see
   // TunerConstants.createDrivetrain()) - numerically identical regardless of which module this
-  // reads given the chassis's symmetric 19.75in x 19.75in footprint.
+  // reads, since all 4 corners of a centered rectangle (10in x 8in as of 2026-07-31, previously
+  // 19.75in square) are equidistant from the center regardless of the footprint's exact shape.
   private static final double kDriveBaseRadiusMeters =
-      Math.hypot(TunerConstants.FrontLeft.LocationX, TunerConstants.FrontLeft.LocationY);
+      Math.hypot(TunerConstants.FrontRight.LocationX, TunerConstants.FrontRight.LocationY);
 
   // The drivetrain's true top translational speed - the throttle slider scales this down live
   // (see throttleSpeedPercent()) rather than a fixed fraction being applied here.
@@ -66,20 +67,16 @@ public class RobotContainer {
   // rotational speed (see OperatorConstants.kMaxRotationOutputPercent).
   private double MaxAngularRate = (kMaxSpeedMps / kDriveBaseRadiusMeters) * OperatorConstants.kMaxRotationOutputPercent;
 
-  // The Pigeon 2 is mounted backwards on this chassis - its raw yaw reads 180 degrees off from
-  // the robot's true physical front. Used both by the recenter button (to bake the correction
-  // into the seeded field-centric forward) and by the POV rotate-to-heading feature (to correct
-  // the raw gyro reading it reads directly - see the POV bindings below for why that reads the
-  // gyro directly instead of going through the recenter-affected pose heading).
-  private static final double kPigeonMountOffsetDegrees = 180.0;
-
   // The robot's subsystems and commands are defined here...
   public final CommandSwerveDrivetrain drivetrain = TunerConstants.createDrivetrain();
   public final Vision vision = new Vision();
-  // No avoidance behavior wired up yet - just publishes distance readings to the dashboard so
-  // wiring/orientation can be confirmed first (see Constants.UltrasonicConstants for the
-  // required voltage divider on the Echo line).
-  public final ObstacleSensor obstacleSensor = new ObstacleSensor();
+  // Disabled 2026-07-31: the ultrasonic distance sensor is not currently hooked up to this
+  // chassis. Left commented out (rather than deleted) since ObstacleSensor.java itself is still
+  // intact - re-enable this line (and the isObstacleTooClose() check in
+  // computeTranslationVelocity() below) once it's wired back in. Not constructing it here means
+  // its periodic() ping/echo cycle never runs, so there's no risk of a floating/disconnected DIO
+  // reading feeding noise into the obstacle-avoidance driving behavior.
+  // public final ObstacleSensor obstacleSensor = new ObstacleSensor();
 
   private final Telemetry logger = new Telemetry(kMaxSpeedMps);
 
@@ -247,23 +244,38 @@ public class RobotContainer {
         drivetrain.applyRequest(() -> idle).ignoringDisable(true)
     );
 
+    // Reset the joystick smoothing limiters (m_xLimiter/m_yLimiter/m_rotLimiter) the instant the
+    // robot leaves disabled (teleop OR autonomous) - these are plain fields that persist for the
+    // whole robot code session, not something tied to a single command's lifecycle, so without
+    // this their internal memory carries over from whatever the stick was doing right before
+    // disable. SlewRateLimiter.calculate() ramps its remembered output TOWARD the new input at a
+    // limited rate rather than snapping to it - if the driver wasn't perfectly centered at the
+    // moment of disable (very common), the limiter still remembers that nonzero value, and the
+    // very next enable ramps DOWN from it over several loops before catching up to the stick's
+    // now-at-rest position - producing exactly this "robot moves on its own right after I hit
+    // enable" symptom, since that ramping-down value can exceed the translation/rotation
+    // deadband even though the driver isn't touching anything. Not a Driver Station/dashboard
+    // setting - purely this stale in-code state.
+    RobotModeTriggers.disabled().onFalse(Commands.runOnce(() -> {
+        m_xLimiter.reset(0);
+        m_yLimiter.reset(0);
+        m_rotLimiter.reset(0);
+    }).ignoringDisable(true));
+
     // Press the trigger (button 1) to recenter field-centric "forward" on wherever the robot is
     // currently facing - useful after the robot ends up turned some way that no longer matches
     // the driver's sense of forward (e.g. after auto, or after a POV rotate/tag-align leaves it
     // facing an odd direction) without having to re-seed odometry/pose entirely. Was previously
     // the brake/wheel-lock button; that behavior isn't bound to anything now.
     //
-    // Seeded to kPigeonMountOffsetDegrees (180) rather than 0: seedFieldCentric(rotation) records
-    // "current physical orientation minus rotation" as the new field-centric forward. The Pigeon
-    // 2's mounting error (see kPigeonMountOffsetDegrees) means the heading it feeds into the pose
-    // estimate already reads 180 degrees off from the robot's true physical front. Subtracting
-    // that same 180 degrees here cancels the mounting error out, so after pressing this while
-    // pointed at the true physical front, "drive forward" actually drives forward instead of
-    // backward.
+    // Plain no-arg seedFieldCentric() - no manual yaw correction needed here. The Pigeon 2's
+    // actual mounting error is a 180-degree ROLL (mounted upside-down along its long axis, not a
+    // yaw/facing-backward issue as briefly misdiagnosed earlier), which is now corrected at the
+    // source via TunerConstants' Pigeon2Configuration MountPose - the Pigeon 2's own firmware
+    // already reports yaw relative to the robot's true frame, so no further offset belongs here.
     m_driverController.button(OperatorConstants.kThrustmasterTriggerButton)
         .onTrue(Commands.runOnce(
-            () -> drivetrain.seedFieldCentric(Rotation2d.fromDegrees(kPigeonMountOffsetDegrees)),
-            drivetrain
+            drivetrain::seedFieldCentric, drivetrain
         ).ignoringDisable(true));
 
     // Hold button 2 (thumb button) to spin in place looking for any AprilTag, then auto-align to
@@ -306,14 +318,6 @@ public class RobotContainer {
     // fully automatic "go do this" action, not a driving assist. This is the first autonomous-
     // translation behavior on this robot (button 2 only ever touched rotation) - test
     // cautiously (blocks first) until the distance PID's sign/behavior is confirmed correct.
-    //
-    // Checks BOTH the front and rear cameras (see Vision.getTargetById()) for the sought tag, so
-    // whichever camera picks it up first during the search spin is the one used - this naturally
-    // approaches with whichever side of the robot needed less rotation to find the tag in the
-    // first place, without needing to explicitly compare rotation distances between the two
-    // cameras. The rear-camera approach direction is UNVERIFIED on the robot as of this feature
-    // (see the sign-correction comments inside tagSearchAndApproachCommand()) - confirm it drives
-    // toward the tag, not away, before trusting it near anything.
     m_driverController.button(OperatorConstants.kThrustmasterTagSearchButton)
         .toggleOnTrue(tagSearchAndApproachCommand());
 
@@ -390,10 +394,11 @@ public class RobotContainer {
    * time the recenter button (button 1) calls {@code seedFieldCentric}, which would make these
    * "absolute" compass directions silently drift to mean something different after every
    * recenter press. The raw gyro reading stays fixed to whatever the field frame was at robot
-   * boot regardless of any later seeding, which is what makes these truly absolute. It still
-   * needs {@link #kPigeonMountOffsetDegrees} added in, for the same backwards-mounting reason
-   * the recenter button corrects for - without it, "Up" would point the robot's true physical
-   * front toward what is actually the field-relative south.
+   * boot regardless of any later seeding, which is what makes these truly absolute. No extra
+   * mounting correction is needed here - the Pigeon 2's physical mounting error (a 180-degree
+   * roll, i.e. mounted upside-down) is corrected at the source via TunerConstants'
+   * Pigeon2Configuration MountPose, so its own firmware already reports yaw relative to the
+   * robot's true frame.
    */
   private Command rotateToHeadingCommand(double compassDegrees) {
     double targetHeadingDegrees = Rotation2d.fromDegrees(-compassDegrees).getDegrees();
@@ -402,8 +407,7 @@ public class RobotContainer {
         () -> {
             double maxSpeed = kMaxSpeedMps * throttleSpeedPercent();
             double[] translation = computeTranslationVelocity(maxSpeed);
-            double currentHeadingDegrees = drivetrain.getPigeon2().getYaw().getValueAsDouble()
-                + kPigeonMountOffsetDegrees;
+            double currentHeadingDegrees = drivetrain.getPigeon2().getYaw().getValueAsDouble();
             double rotationalRate = MathUtil.clamp(
                 m_headingHoldController.calculate(currentHeadingDegrees, targetHeadingDegrees),
                 -MaxAngularRate, MaxAngularRate
@@ -606,10 +610,7 @@ public class RobotContainer {
     Runnable driveTowardTarget = () -> {
         int currentId = VisionConstants.kSearchTagIdOrder[
             Math.min(tourIndex[0], VisionConstants.kSearchTagIdOrder.length - 1)];
-        Optional<Vision.TargetSighting> frontSighting = vision.getFrontTargetById(currentId);
-        Optional<Vision.TargetSighting> rearSighting = vision.getRearTargetById(currentId);
-        boolean frontPresent = frontSighting.isPresent();
-        boolean rearPresent = rearSighting.isPresent();
+        Optional<PhotonTrackedTarget> target = vision.getTargetById(currentId);
         SmartDashboard.putNumber("TagSearch/SoughtId", currentId);
         SmartDashboard.putNumber("TagSearch/TourIndex", tourIndex[0]);
 
@@ -620,43 +621,17 @@ public class RobotContainer {
         boolean giveUpOnCurrentStop = false;
         double loggedYawErrorDegrees = 0.0;
         double loggedDistanceErrorMeters = 0.0;
-        boolean loggedUsedRear = false;
 
-        if (frontPresent || rearPresent) {
+        if (target.isPresent()) {
             sweptDegrees[0] = 0.0;
             lastHeading[0] = null;
             lostTimer.stop();
             lostTimer.reset();
 
-            // Each camera's own compensated (latency-corrected) yaw error, relative to ITS OWN
-            // boresight - computed directly if that camera currently sees the target, or derived
-            // from the OTHER camera's real reading if not. Front/rear are mounted 180 degrees
-            // apart (see VisionConstants.kFrontCameraName's comment), so "what the other camera
-            // would read" is just +180 degrees, wrapped - a pure geometric identity, valid
-            // regardless of which one actually produced the frame.
-            double frontYawError;
-            double rearYawError;
-            if (frontPresent) {
-                frontYawError = computeCompensatedYawDegrees(
-                    frontSighting.get().target().getYaw(), frontSighting.get().timestampSeconds());
-                rearYawError = rearPresent
-                    ? computeCompensatedYawDegrees(
-                        rearSighting.get().target().getYaw(), rearSighting.get().timestampSeconds())
-                    : MathUtil.inputModulus(180.0 + frontYawError, -180.0, 180.0);
-            } else {
-                rearYawError = computeCompensatedYawDegrees(
-                    rearSighting.get().target().getYaw(), rearSighting.get().timestampSeconds());
-                frontYawError = MathUtil.inputModulus(180.0 + rearYawError, -180.0, 180.0);
-            }
-
-            // Take the shortest path: whichever camera needs LESS rotation to square up wins,
-            // even if it doesn't directly see the target yet - in that case rotation continues
-            // toward it, but translation waits (see chosenSighting below) until it does, rather
-            // than approaching using the OTHER (non-chosen, more-rotation-needed) camera's data.
-            boolean useRear = Math.abs(rearYawError) < Math.abs(frontYawError);
-            double compensatedYawDegrees = useRear ? rearYawError : frontYawError;
-            Optional<Vision.TargetSighting> chosenSighting = useRear ? rearSighting : frontSighting;
-
+            PhotonTrackedTarget seenTarget = target.get();
+            int seenTargetId = seenTarget.getFiducialId();
+            double compensatedYawDegrees = computeCompensatedYawDegrees(
+                seenTarget.getYaw(), vision.getTargetTimestampSeconds());
             rotationalRate = MathUtil.clamp(
                 m_alignRotationController.calculate(compensatedYawDegrees, 0.0),
                 -MaxAngularRate, MaxAngularRate
@@ -664,122 +639,89 @@ public class RobotContainer {
 
             // Remember roughly where this tag is (field-relative) so a future search for the
             // same ID can start by turning the shorter way toward it - see
-            // m_lastKnownTagBearings's field comment. Uses whichever camera has a REAL detection
-            // this loop (front preferred if both do), not necessarily the CHOSEN one, since the
-            // chosen one might only have a derived estimate right now.
-            Vision.TargetSighting realSighting = frontPresent ? frontSighting.get() : rearSighting.get();
-            double realYawError = frontPresent ? frontYawError : rearYawError;
-            double cameraMountOffsetDegrees = realSighting.fromRearCamera()
-                ? VisionConstants.kRearCameraMountOffsetDegrees : 0.0;
-            m_lastKnownTagBearings.put(currentId, drivetrain.getState().Pose.getRotation()
-                .plus(Rotation2d.fromDegrees(cameraMountOffsetDegrees + realYawError)));
+            // m_lastKnownTagBearings's field comment.
+            m_lastKnownTagBearings.put(seenTargetId, drivetrain.getState().Pose.getRotation()
+                .plus(Rotation2d.fromDegrees(compensatedYawDegrees)));
 
-            if (chosenSighting.isPresent()) {
-                // The camera needing less rotation ALSO already has a real detection - use its
-                // own live distance/tag-face data, same as the single-camera behavior,
-                // parameterized by which camera (useRear) for the mounting-direction sign
-                // corrections.
-                PhotonTrackedTarget seenTarget = chosenSighting.get().target();
+            // Ground-plane distance (ignores the camera/tag height difference) from the
+            // camera-to-target 3D transform - requires the PhotonVision pipeline to have a valid
+            // camera calibration for this to be meaningful.
+            var cameraToTarget = seenTarget.getBestCameraToTarget().getTranslation();
+            double distanceMeters = Math.hypot(cameraToTarget.getX(), cameraToTarget.getY());
+            double distanceErrorMeters = distanceMeters - VisionConstants.kApproachDistanceMeters;
+            // Negated: PIDController.calculate(measurement, setpoint) gives a NEGATIVE output
+            // when measurement > setpoint (too far away), but driving toward the tag is exactly
+            // what CLOSES that distance - the opposite of a typical PID relationship, where
+            // positive output increases the measurement. After this negation, positive
+            // approachOutput means "move closer to the tag."
+            double approachOutput = -m_approachDistanceController.calculate(
+                distanceMeters, VisionConstants.kApproachDistanceMeters);
 
-                // Ground-plane distance (ignores the camera/tag height difference) from the
-                // camera-to-target 3D transform - requires the PhotonVision pipeline to have a
-                // valid camera calibration for this to be meaningful.
-                var cameraToTarget = seenTarget.getBestCameraToTarget().getTranslation();
-                double distanceMeters = Math.hypot(cameraToTarget.getX(), cameraToTarget.getY());
-                double distanceErrorMeters = distanceMeters - VisionConstants.kApproachDistanceMeters;
-                // Negated: PIDController.calculate(measurement, setpoint) gives a NEGATIVE output
-                // when measurement > setpoint (too far away), but driving toward the tag is
-                // exactly what CLOSES that distance - the opposite of a typical PID relationship,
-                // where positive output increases the measurement. After this negation, positive
-                // approachOutput means "move closer to the tag."
-                double approachOutput = -m_approachDistanceController.calculate(
-                    distanceMeters, VisionConstants.kApproachDistanceMeters);
+            // Don't start closing distance until roughly squared up with the tag - avoids
+            // crabbing in at a steep angle while still mid-rotation.
+            boolean squaredUp = Math.abs(compensatedYawDegrees)
+                <= VisionConstants.kApproachYawToleranceDegrees;
+            // Negated AGAIN here (separate from the negation above) - this camera is mounted
+            // facing the drivetrain's kinematic "back": RobotCentric's +X is defined by the
+            // drivetrain's own front (module geometry), independent of which way the camera
+            // physically points. Confirmed on the robot with real (post-calibration) distance
+            // data: commanding +approachOutput while farther than the standoff distance drove
+            // AWAY from the tag, not toward it - this is the first tag-search behavior to ever
+            // drive translation (button 2 only ever used rotation), so this mismatch had no
+            // earlier chance to show up.
+            double mountingCorrectedOutput = -approachOutput;
 
-                // Don't start closing distance until roughly squared up with the tag - avoids
-                // crabbing in at a steep angle while still mid-rotation.
-                boolean squaredUp = Math.abs(compensatedYawDegrees)
-                    <= VisionConstants.kApproachYawToleranceDegrees;
-                // Sign depends on WHICH camera is being used: "front cam" was confirmed on the
-                // robot to be mounted facing the drivetrain's kinematic "back" (RobotCentric's +X
-                // is defined by the drivetrain's own front, module geometry, independent of which
-                // way either camera physically points) - commanding +approachOutput while farther
-                // than the standoff distance drove AWAY from the tag, not toward it, so using
-                // front needs negating. "rear camera" is mounted 180 degrees from front (see
-                // VisionConstants.kFrontCameraName's comment), which puts it facing the SAME
-                // direction as RobotCentric's +X - so using rear needs the OPPOSITE sign
-                // (un-negated). UNVERIFIED on the robot as of this feature - confirm the
-                // rear-camera approach direction is actually correct before trusting it near
-                // anything, same as every other sign in this method needed on-robot confirmation.
-                double mountingCorrectedOutput = useRear ? approachOutput : -approachOutput;
+            // Floors the magnitude (direction preserved) so a small residual error doesn't
+            // produce a commanded speed too weak to overcome static friction - confirmed on the
+            // robot: without this, the robot stalled short of arriving once distance error
+            // shrank to ~0.07m, well outside kApproachDistanceToleranceMeters (~0.05m).
+            double flooredOutput = Math.abs(mountingCorrectedOutput) < VisionConstants.kApproachMinSpeedMps
+                ? Math.copySign(VisionConstants.kApproachMinSpeedMps, mountingCorrectedOutput)
+                : mountingCorrectedOutput;
 
-                // Floors the magnitude (direction preserved) so a small residual error doesn't
-                // produce a commanded speed too weak to overcome static friction - confirmed on
-                // the robot: without this, the robot stalled short of arriving once distance
-                // error shrank to ~0.07m, well outside kApproachDistanceToleranceMeters (~0.05m).
-                double flooredOutput = Math.abs(mountingCorrectedOutput) < VisionConstants.kApproachMinSpeedMps
-                    ? Math.copySign(VisionConstants.kApproachMinSpeedMps, mountingCorrectedOutput)
-                    : mountingCorrectedOutput;
+            forwardSpeed = squaredUp
+                ? MathUtil.clamp(flooredOutput,
+                    -VisionConstants.kApproachMaxSpeedMps, VisionConstants.kApproachMaxSpeedMps)
+                : 0.0;
 
-                forwardSpeed = squaredUp
-                    ? MathUtil.clamp(flooredOutput,
-                        -VisionConstants.kApproachMaxSpeedMps, VisionConstants.kApproachMaxSpeedMps)
-                    : 0.0;
+            // --- Squaring-up (tag-face alignment) RE-ENABLED 2026-07-24 ---
+            // Originally disabled 2026-07-23 after it made the robot circle the target - at the
+            // time this was diagnosed as the rotation-centering and face-angle-strafing loops
+            // fighting each other. However, the camera's PhotonVision pipeline had 3D mode OFF
+            // for the entire time this was built and tested, which means
+            // getBestCameraToTarget().getRotation() (what signedTagFaceAngleDegrees reads) was
+            // always a default/zero value, not real data - so the "circling" may well have
+            // actually been a bogus near-constant strafe command (chasing garbage input) with
+            // the yaw loop compensating for the resulting drift, not a fundamental architecture
+            // problem. Re-enabled now that 3D mode is on and real distance data has been
+            // confirmed working - re-verify whether circling still happens with real data before
+            // assuming the single-target-transform redesign is actually necessary.
+            double signedTagFaceAngleDegrees = MathUtil.inputModulus(
+                Math.toDegrees(seenTarget.getBestCameraToTarget().getRotation().getZ()) - 180.0,
+                -180.0, 180.0
+            );
+            double tagFaceAngleDegrees = Math.abs(signedTagFaceAngleDegrees);
+            // Negated: confirmed backwards on the robot previously (strafed the wrong left/right
+            // direction) - kept even though that test predates the 3D-mode fix, since this sign
+            // relationship is about strafe-direction-vs-error, not about the data being real.
+            lateralSpeed = squaredUp
+                ? MathUtil.clamp(-m_tagFaceAlignController.calculate(signedTagFaceAngleDegrees, 0.0),
+                    -VisionConstants.kApproachMaxSpeedMps, VisionConstants.kApproachMaxSpeedMps)
+                : 0.0;
 
-                // --- Squaring-up (tag-face alignment) RE-ENABLED 2026-07-24 ---
-                // Originally disabled 2026-07-23 after it made the robot circle the target - at
-                // the time this was diagnosed as the rotation-centering and face-angle-strafing
-                // loops fighting each other. However, the camera's PhotonVision pipeline had 3D
-                // mode OFF for the entire time this was built and tested, which means
-                // getBestCameraToTarget().getRotation() (what signedTagFaceAngleDegrees reads)
-                // was always a default/zero value, not real data - so the "circling" may well
-                // have actually been a bogus near-constant strafe command (chasing garbage input)
-                // with the yaw loop compensating for the resulting drift, not a fundamental
-                // architecture problem. Re-enabled now that 3D mode is on and real distance data
-                // has been confirmed working - re-verify whether circling still happens with real
-                // data before assuming the single-target-transform redesign is actually necessary.
-                double signedTagFaceAngleDegrees = MathUtil.inputModulus(
-                    Math.toDegrees(seenTarget.getBestCameraToTarget().getRotation().getZ()) - 180.0,
-                    -180.0, 180.0
-                );
-                double tagFaceAngleDegrees = Math.abs(signedTagFaceAngleDegrees);
-                // Negated: confirmed backwards on the robot previously (strafed the wrong
-                // left/right direction) - kept even though that test predates the 3D-mode fix,
-                // since this sign relationship is about strafe-direction-vs-error, not about the
-                // data being real. Same per-camera mirroring reasoning as mountingCorrectedOutput
-                // above applies here too - a camera facing the opposite way sees its own
-                // left/right mirror-flipped relative to the chassis, so using rear needs the
-                // OPPOSITE sign from front. Equally UNVERIFIED on the robot - confirm before
-                // trusting it.
-                lateralSpeed = squaredUp
-                    ? MathUtil.clamp(
-                        (useRear ? 1 : -1) * m_tagFaceAlignController.calculate(signedTagFaceAngleDegrees, 0.0),
-                        -VisionConstants.kApproachMaxSpeedMps, VisionConstants.kApproachMaxSpeedMps)
-                    : 0.0;
+            arrived = Math.abs(compensatedYawDegrees) <= VisionConstants.kAlignYawToleranceDegrees
+                && Math.abs(distanceErrorMeters) <= VisionConstants.kApproachDistanceToleranceMeters
+                && tagFaceAngleDegrees <= VisionConstants.kApproachTagFaceToleranceDegrees;
 
-                arrived = Math.abs(compensatedYawDegrees) <= VisionConstants.kAlignYawToleranceDegrees
-                    && Math.abs(distanceErrorMeters) <= VisionConstants.kApproachDistanceToleranceMeters
-                    && tagFaceAngleDegrees <= VisionConstants.kApproachTagFaceToleranceDegrees;
+            SmartDashboard.putNumber("TagSearch/TagFaceAngleDegrees", signedTagFaceAngleDegrees);
 
-                SmartDashboard.putNumber("TagSearch/TagFaceAngleDegrees", signedTagFaceAngleDegrees);
-                loggedDistanceErrorMeters = distanceErrorMeters;
-                SmartDashboard.putNumber("TagSearch/DistanceMeters", distanceMeters);
-                SmartDashboard.putNumber("TagSearch/DistanceErrorMeters", distanceErrorMeters);
-            } else {
-                // The camera needing less rotation doesn't directly see the target yet - keep
-                // rotating toward it (compensatedYawDegrees/rotationalRate above already point
-                // that way); no real distance/tag-face data exists for it yet, so hold
-                // translation at zero and wait rather than approaching using the OTHER
-                // (non-chosen) camera's numbers.
-                forwardSpeed = 0.0;
-                lateralSpeed = 0.0;
-            }
-
-            loggedUsedRear = useRear;
-            SmartDashboard.putBoolean("TagSearch/FromRearCamera", useRear);
-            SmartDashboard.putBoolean("TagSearch/ChosenCameraHasDirectSighting", chosenSighting.isPresent());
             loggedYawErrorDegrees = compensatedYawDegrees;
-            SmartDashboard.putNumber("TagSearch/TargetId", currentId);
+            loggedDistanceErrorMeters = distanceErrorMeters;
+
+            SmartDashboard.putNumber("TagSearch/TargetId", seenTargetId);
             SmartDashboard.putNumber("TagSearch/YawErrorDegrees", compensatedYawDegrees);
+            SmartDashboard.putNumber("TagSearch/DistanceMeters", distanceMeters);
+            SmartDashboard.putNumber("TagSearch/DistanceErrorMeters", distanceErrorMeters);
         } else {
             lostTimer.start();
             if (!lostTimer.hasElapsed(VisionConstants.kLostGracePeriodSeconds)) {
@@ -864,10 +806,9 @@ public class RobotContainer {
         printCounter[0]++;
         if (printCounter[0] % 25 == 0) {
             System.out.printf(
-                "TagSearch: tourIndex=%d soughtId=%d found=%b rear=%b swept=%.0f yawErr=%.1f distErr=%.2f arrived=%b arrivedFor=%.2f%n",
-                tourIndex[0], currentId, frontPresent || rearPresent, loggedUsedRear,
-                sweptDegrees[0], loggedYawErrorDegrees, loggedDistanceErrorMeters, arrived,
-                arrivedTimer.get()
+                "TagSearch: tourIndex=%d soughtId=%d found=%b swept=%.0f yawErr=%.1f distErr=%.2f arrived=%b arrivedFor=%.2f%n",
+                tourIndex[0], currentId, target.isPresent(), sweptDegrees[0], loggedYawErrorDegrees,
+                loggedDistanceErrorMeters, arrived, arrivedTimer.get()
             );
         }
 
@@ -1007,14 +948,12 @@ public class RobotContainer {
    *       slider, since it represents the speed below which the wheels don't move usefully
    *       regardless of what the slider is set to. The floor is clamped to {@code maxSpeed} so it
    *       can never command more than the slider currently allows.
-   *   <li>Finally, if {@link ObstacleSensor#isObstacleTooClose()} - the front-mounted ultrasonic
-   *       sensor sees something closer than {@link UltrasonicConstants#kObstacleStopDistanceInches}
-   *       - sideways output is zeroed and any remaining FORWARD component is clamped to zero,
-   *       leaving only backward translation. Turning ({@link #computeManualRotationalRate()}) is
-   *       a separate method entirely and is never touched by this - rotating in place doesn't
-   *       risk closing distance with whatever tripped the sensor, only forward/sideways motion
-   *       does.
    * </ul>
+   *
+   * <p>The {@link ObstacleSensor}-based obstacle-avoidance clamp (block forward/sideways within
+   * {@link UltrasonicConstants#kObstacleStopDistanceInches}) is currently DISABLED (2026-07-31) -
+   * the ultrasonic sensor isn't hooked up to this chassis right now. See the commented-out
+   * {@code obstacleSensor} field above to re-enable once it's wired back in.
    *
    * @param maxSpeed the slider-scaled top speed (m/s) to scale stick deflection by
    */
@@ -1040,10 +979,11 @@ public class RobotContainer {
     double outputX = unitX * outputSpeed;
     double outputY = unitY * outputSpeed;
 
-    if (obstacleSensor.isObstacleTooClose()) {
-        outputX = Math.min(outputX, 0.0);
-        outputY = 0.0;
-    }
+    // Disabled 2026-07-31 (see the commented-out obstacleSensor field) - sensor not hooked up.
+    // if (obstacleSensor.isObstacleTooClose()) {
+    //     outputX = Math.min(outputX, 0.0);
+    //     outputY = 0.0;
+    // }
 
     return new double[] {outputX, outputY};
   }

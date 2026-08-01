@@ -25,8 +25,10 @@ import frc.robot.subsystems.CommandSwerveDrivetrain;
  * the same physical chassis/modules (SDS Mk5n / Kraken X60 / Kraken X44 / CANcoder), just under a
  * new project, and the CAN ID convention (steer 0-3, drive 4-7, encoders 11-14, Pigeon 20 — see
  * that repo's {@code Constants.CanIDs}) carries over unchanged. Physical module positions here
- * use this project's own 19.75in x 19.75in wheelbase/trackwidth - the X/Y offsets in that other
- * repo implying a 23in x 23.5in frame were a measurement error there, not a real difference.
+ * use this project's own 10in (wheelbase, front-to-back) x 8in (trackwidth, left-to-right)
+ * footprint (updated 2026-07-31 after the chassis shrunk from the original 19.75in square) - the
+ * X/Y offsets in that other repo implying a 23in x 23.5in frame were a measurement error there,
+ * not a real difference.
  *
  * <p><b>Before this will drive correctly on the real robot, the team should still:</b>
  *
@@ -113,7 +115,14 @@ public class TunerConstants {
                 .withStatorCurrentLimitEnable(true)
         );
     private static final CANcoderConfiguration encoderInitialConfigs = new CANcoderConfiguration();
-    // Configs for the Pigeon 2; leave this null to skip applying Pigeon 2 configs
+    // Configs for the Pigeon 2; leave this null to skip applying Pigeon 2 configs. Briefly set to
+    // a MountPoseConfigs(Roll=180) between 2026-07-31 sessions to compensate for the Pigeon 2
+    // being physically mounted upside-down - reverted back to null the same day once it was
+    // re-seated in its correct (right-side-up) orientation, since the mounting error that config
+    // existed to correct no longer exists in hardware. If the Pigeon is ever mounted non-flush
+    // again, re-add a MountPoseConfigs here (see git history around 2026-07-31) rather than
+    // patching yaw in software - see RobotContainer's git history for why a manual yaw offset was
+    // the wrong fix for an axis-flip mounting error.
     private static final Pigeon2Configuration pigeonConfigs = null;
 
     // CAN bus that the devices are located on; roboRIO onboard bus (no CANivore)
@@ -179,9 +188,18 @@ public class TunerConstants {
             .withSteerFrictionVoltage(kSteerFrictionVoltage)
             .withDriveFrictionVoltage(kDriveFrictionVoltage);
 
-    // CAN IDs and CANcoder magnet offsets match team 4296's tridentrobotics/2026_official repo
-    // (see Constants.CanIDs there: steer motors 0-3, drive motors 4-7, CANcoders 11-14, Pigeon
-    // 20) - per the team this is the same physical chassis/modules, so the offsets carry over.
+    // FrontLeft/BackRight CAN IDs and CANcoder magnet offsets still match team 4296's
+    // tridentrobotics/2026_official repo (see Constants.CanIDs there: steer motors 0-3, drive
+    // motors 4-7, CANcoders 11-14, Pigeon 20). FrontRight/BackLeft do NOT follow that convention -
+    // updated 2026-07-31 after swapping in different motors/CANcoders on those two modules (see
+    // createDrivetrain()'s comment for which 2 modules are actually wired up). Their encoder
+    // offsets below are UNVERIFIED against the newly-swapped CANcoders - re-zero them (see the
+    // class javadoc's checklist, item 2) before trusting steering angle on these two modules.
+
+    // Module X/Y positions below are half the chassis's wheelbase (front-to-back, X) and
+    // trackwidth (left-to-right, Y) - 10in wheelbase / 2 = 5in, 8in trackwidth / 2 = 4in. Updated
+    // 2026-07-31: the chassis shrunk from its original 19.75in x 19.75in square footprint down to
+    // 10in x 8in - re-measure and update these if the frame changes again.
 
     // Front Left
     private static final int kFrontLeftDriveMotorId = 4;
@@ -191,30 +209,30 @@ public class TunerConstants {
     private static final boolean kFrontLeftSteerMotorInverted = false;
     private static final boolean kFrontLeftEncoderInverted = false;
 
-    private static final Distance kFrontLeftXPos = Inches.of(9.875);
-    private static final Distance kFrontLeftYPos = Inches.of(9.875);
+    private static final Distance kFrontLeftXPos = Inches.of(5);
+    private static final Distance kFrontLeftYPos = Inches.of(4);
 
     // Front Right
-    private static final int kFrontRightDriveMotorId = 6;
-    private static final int kFrontRightSteerMotorId = 3;
-    private static final int kFrontRightEncoderId = 13;
+    private static final int kFrontRightDriveMotorId = 1;
+    private static final int kFrontRightSteerMotorId = 5;
+    private static final int kFrontRightEncoderId = 12;
     private static final Angle kFrontRightEncoderOffset = Rotations.of(-0.018310546875);
     private static final boolean kFrontRightSteerMotorInverted = false;
     private static final boolean kFrontRightEncoderInverted = false;
 
-    private static final Distance kFrontRightXPos = Inches.of(9.875);
-    private static final Distance kFrontRightYPos = Inches.of(-9.875);
+    private static final Distance kFrontRightXPos = Inches.of(5);
+    private static final Distance kFrontRightYPos = Inches.of(-4);
 
     // Back Left
-    private static final int kBackLeftDriveMotorId = 5;
-    private static final int kBackLeftSteerMotorId = 1;
-    private static final int kBackLeftEncoderId = 12;
+    private static final int kBackLeftDriveMotorId = 3;
+    private static final int kBackLeftSteerMotorId = 6;
+    private static final int kBackLeftEncoderId = 13;
     private static final Angle kBackLeftEncoderOffset = Rotations.of(0.300537109375);
     private static final boolean kBackLeftSteerMotorInverted = false;
     private static final boolean kBackLeftEncoderInverted = false;
 
-    private static final Distance kBackLeftXPos = Inches.of(-9.875);
-    private static final Distance kBackLeftYPos = Inches.of(9.875);
+    private static final Distance kBackLeftXPos = Inches.of(-5);
+    private static final Distance kBackLeftYPos = Inches.of(4);
 
     // Back Right
     private static final int kBackRightDriveMotorId = 7;
@@ -224,8 +242,8 @@ public class TunerConstants {
     private static final boolean kBackRightSteerMotorInverted = false;
     private static final boolean kBackRightEncoderInverted = false;
 
-    private static final Distance kBackRightXPos = Inches.of(-9.875);
-    private static final Distance kBackRightYPos = Inches.of(-9.875);
+    private static final Distance kBackRightXPos = Inches.of(-5);
+    private static final Distance kBackRightYPos = Inches.of(-4);
 
     public static final SwerveModuleConstants<TalonFXConfiguration, TalonFXConfiguration, CANcoderConfiguration> FrontLeft =
         ConstantCreator.createModuleConstants(
@@ -252,16 +270,19 @@ public class TunerConstants {
      * Creates a CommandSwerveDrivetrain instance.
      * This should only be called once in your robot program.
      *
-     * <p>Only FrontLeft and BackRight are wired in below (2026-07-25) - the FrontRight and
-     * BackLeft modules are physically disconnected from this chassis right now. Diagonal
-     * two-module kinematics is well-determined (WPILib's {@code SwerveDriveKinematics} solves
-     * forward/inverse kinematics for any N &gt;= 2 module layout), so translation and rotation
-     * both still work, but odometry/traction will be noticeably worse than with all 4 modules -
-     * re-add {@code FrontRight, BackLeft} to the argument list below once they're reconnected.
+     * <p>Only FrontRight and BackLeft are wired in below (updated 2026-07-31) - FrontLeft and
+     * BackRight's motors got swapped out and moved to the FrontRight/BackLeft positions (see
+     * their CAN ID comments above), so FrontLeft/BackRight are the two now physically
+     * disconnected from this chassis, the reverse of the prior (2026-07-25) 2-module setup.
+     * Diagonal two-module kinematics is well-determined (WPILib's {@code SwerveDriveKinematics}
+     * solves forward/inverse kinematics for any N &gt;= 2 module layout), so translation and
+     * rotation both still work, but odometry/traction will be noticeably worse than with all 4
+     * modules - re-add {@code FrontLeft, BackRight} to the argument list below once they're
+     * reconnected (with their own correct CAN IDs re-verified first).
      */
     public static CommandSwerveDrivetrain createDrivetrain() {
         return new CommandSwerveDrivetrain(
-            DrivetrainConstants, FrontLeft, BackRight
+            DrivetrainConstants, FrontRight, BackLeft
         );
     }
 

@@ -120,29 +120,16 @@ public final class Constants {
   }
 
   public static class VisionConstants {
-    // Names assigned to the two C920s in the PhotonVision web UI's Cameras tab - must match
-    // exactly. Confirmed by the team (not measured/derived from code): rear is mounted directly
-    // opposite (180 degrees) from front. Note "front cam" was ALREADY established (see the
-    // mounting-correction comment in RobotContainer.tagSearchAndApproachCommand()) to face the
-    // drivetrain's kinematic "back" (RobotCentric's -X, opposite the module-geometry-defined
-    // front) - confusingly named relative to the drivetrain's own axes, but that's exactly why
-    // approaching a "front cam" sighting already needed a sign flip before the rear camera ever
-    // existed. Since rear is 180 degrees from front, it therefore faces the SAME direction as
-    // RobotCentric's +X and needs the OPPOSITE sign - see fromRearCamera's use in
-    // tagSearchAndApproachCommand().
+    // Name assigned to the C920 in the PhotonVision web UI's Cameras tab - must match exactly. A
+    // rear-facing second camera ("rear camera") briefly existed alongside this one (2026-07-31)
+    // but was physically removed - see git history around that date if a rear camera is ever
+    // added back, since the tag-search-and-approach behavior below went back to single-camera-
+    // only logic in the meantime. Note: this camera was already established (see the
+    // mounting-correction comment in RobotContainer.tagSearchAndApproachCommand()) to be mounted
+    // facing the drivetrain's kinematic "back" (RobotCentric's -X, opposite the module-geometry-
+    // defined front) - confusingly named relative to the drivetrain's own axes, but that's why
+    // approaching a sighting needs a sign flip.
     public static final String kFrontCameraName = "front cam";
-    public static final String kRearCameraName = "rear camera";
-
-    // How many degrees the rear camera's mounting is rotated from the front camera's - used only
-    // to correct the FIELD-RELATIVE remembered-bearing bookkeeping in
-    // RobotContainer.m_lastKnownTagBearings when a rear-camera sighting is what updates it (a
-    // sighting's yaw error is relative to WHICHEVER camera saw it, so it needs this offset added
-    // in before it means anything in field/robot-heading terms). This is a soft heuristic input
-    // (a wrong value only makes a future search start turning the "wrong" first guess, not an
-    // actual correctness problem - the full 360-degree give-up sweep still covers every
-    // direction), unlike the approach translation sign correction, which needs to be exactly
-    // right.
-    public static final double kRearCameraMountOffsetDegrees = 180.0;
 
     // PID gains for rotating the robot to center the best-seen AprilTag in frame (see
     // RobotContainer's button 2 binding). Input/setpoint are yaw error in degrees, output is
