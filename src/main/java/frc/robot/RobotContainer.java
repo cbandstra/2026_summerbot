@@ -260,16 +260,16 @@ public class RobotContainer {
   private Command driveStepCommand(AutoStep.Drive step) {
     double speed = AutoConstants.kAutoDriveSpeedMps;
     // Negated: confirmed backwards on the robot (2026-08-01) - commanding +velocityX on this
-    // RobotCentric request drove the chassis backward, not forward. Left/right (velocityY) is
-    // not yet confirmed either way - test it before trusting "drive left"/"drive right".
+    // RobotCentric request drove the chassis backward, not forward, and +velocityY drove right
+    // instead of left. Both axes are flipped from what CTRE's RobotCentric normally means.
     double vx = switch (step.direction()) {
         case FORWARD -> -speed;
         case BACKWARD -> speed;
         default -> 0.0;
     };
     double vy = switch (step.direction()) {
-        case LEFT -> speed;
-        case RIGHT -> -speed;
+        case LEFT -> -speed;
+        case RIGHT -> speed;
         default -> 0.0;
     };
     return driveDistanceCommand(vx, vy, step.distanceMeters());
