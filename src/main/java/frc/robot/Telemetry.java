@@ -87,19 +87,12 @@ public class Telemetry {
 
     private final double[] m_poseArray = new double[3];
 
-    // Below these, translation/rotation is considered "stopped" for logging purposes - small
-    // enough to catch real driver/command intent, large enough to ignore residual control-loop
-    // noise. Independent of OperatorConstants' input deadbands, which shape stick response, not
-    // log-worthiness of the drivetrain's actual measured output.
+    // Below these speeds, we call it "stopped" for logging - ignores small control-loop noise.
     private static final double kTranslationLogThresholdMps = 0.1;
-    // Raised from 0.1 - was triggering "Rotating..." log lines too easily off small residual
-    // rotation (e.g. steer settling, minor stick noise) that wasn't really the driver/command
-    // intentionally rotating.
+    // Raised from 0.1 - was logging "Rotating..." on tiny noise, not real movement.
     private static final double kRotationLogThresholdRadPerSec = 0.3;
 
-    // Null means "stopped" - tracked so logMotionChanges() only prints on a change, not every
-    // loop, regardless of which command (manual driving, align, search, approach) is currently
-    // commanding the drivetrain.
+    // null means "stopped". Tracked so logMotionChanges() only prints on a change, not every loop.
     private String lastTranslationLabel = null;
     private String lastRotationLabel = null;
 
@@ -143,9 +136,7 @@ public class Telemetry {
 
     /**
      * Logs "Going &lt;direction&gt; at velocity &lt;x&gt;" / "Rotating clockwise" /
-     * "counterclockwise" / "Stopped" to the console on state changes only - covers whatever
-     * command is currently driving (manual, align, search, tag-approach) uniformly, since they
-     * all flow through this same measured-speeds callback rather than needing their own logging.
+     * "counterclockwise" / "Stopped" to the console, but only when it changes.
      */
     private void logMotionChanges(ChassisSpeeds speeds) {
         String translationLabel = translationLabel(speeds.vxMetersPerSecond, speeds.vyMetersPerSecond);

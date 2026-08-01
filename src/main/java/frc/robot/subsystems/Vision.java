@@ -10,20 +10,13 @@ import edu.wpi.first.wpilibj2.command.SubsystemBase;
 import frc.robot.Constants.VisionConstants;
 import frc.robot.RobotLog;
 
-/**
- * Wraps the PhotonVision coprocessor's camera feed. The best target is cached once per
- * scheduler loop in periodic() so every consumer within the same loop sees a consistent result.
- * Uses getAllUnreadResults() (the camera can produce frames faster than the robot loop runs) and
- * keeps the previous target if no new frame arrived this loop, rather than flickering to "no
- * target" for a loop iteration.
- */
+/** Wraps the PhotonVision camera. Caches the best target once per loop so everyone sees the same result. */
 public class Vision extends SubsystemBase {
   private final PhotonCamera camera = new PhotonCamera(VisionConstants.kCameraName);
   private Optional<PhotonTrackedTarget> bestTarget = Optional.empty();
   private double bestTargetTimestampSeconds = 0.0;
 
-  // -1 means "not currently targeting anything" - tracked so acquired/lost logging below only
-  // prints on a change of PhotonVision's overall "best" target ID, not every loop.
+  // -1 means no target. Tracked so we only log when a tag comes in/out of view, not every loop.
   private int loggedTargetId = -1;
 
   @Override
@@ -47,27 +40,19 @@ public class Vision extends SubsystemBase {
     }
   }
 
-  /** True if an AprilTag was seen in the most recently processed camera frame. */
+  /** True if an AprilTag was seen in the most recent camera frame. */
   public boolean hasTarget() {
     return bestTarget.isPresent();
   }
 
-  /**
-   * Yaw of the best-seen AprilTag relative to the camera's center, in degrees. Positive is
-   * counter-clockwise (target to the left of center), per PhotonVision's standard math
-   * convention. Returns 0 if no target is visible - callers should check {@link #hasTarget()}
-   * first.
-   */
+  /** Yaw to the best-seen tag, in degrees. Positive means the tag is left of center. 0 if no target. */
   public double getTargetYawDegrees() {
     return bestTarget.map(PhotonTrackedTarget::getYaw).orElse(0.0);
   }
 
   /**
-   * The estimated wall-clock time (Time Sync Server base, same as {@code Timer.getFPGATimestamp()}
-   * on this robot) at which the frame containing the current best target was actually captured -
-   * always some pipeline/network latency behind "now". Used to latency-compensate the yaw reading
-   * against how far the robot has rotated since that frame was taken (see
-   * RobotContainer.computeAlignRotationalRate()). Meaningless if {@link #hasTarget()} is false.
+   * When the current best target's camera frame was actually captured - always a little behind
+   * "now". Used to correct for lag; see {@link frc.robot.RobotContainer#computeCompensatedYawDegrees}.
    */
   public double getTargetTimestampSeconds() {
     return bestTargetTimestampSeconds;
