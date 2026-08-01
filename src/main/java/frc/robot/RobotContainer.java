@@ -31,7 +31,7 @@ import frc.robot.Constants.OperatorConstants;
 import frc.robot.Constants.VisionConstants;
 import frc.robot.generated.TunerConstants;
 import frc.robot.subsystems.CommandSwerveDrivetrain;
-import frc.robot.subsystems.ObstacleSensor;
+// import frc.robot.subsystems.ObstacleSensor;
 import frc.robot.subsystems.Vision;
 
 /**
@@ -46,7 +46,7 @@ public class RobotContainer {
   // rotational speed (rad/s = m/s / radius), so the rotation safety cap below is scaled from the
   // same physical ceiling as the translation cap instead of an arbitrary fixed rotation rate.
   private static final double kDriveBaseRadiusMeters =
-      Math.hypot(TunerConstants.FrontLeft.LocationX, TunerConstants.FrontLeft.LocationY);
+      Math.hypot(TunerConstants.FrontRight.LocationX, TunerConstants.FrontRight.LocationY);
 
   // The drivetrain's true top translational speed - the throttle slider scales this down live
   // (see throttleSpeedPercent()) rather than a fixed fraction being applied here.
@@ -62,7 +62,7 @@ public class RobotContainer {
   // No avoidance behavior wired up yet - just publishes distance readings to the dashboard so
   // wiring/orientation can be confirmed first (see Constants.UltrasonicConstants for the
   // required voltage divider on the Echo line).
-  public final ObstacleSensor obstacleSensor = new ObstacleSensor();
+//   public final ObstacleSensor obstacleSensor = new ObstacleSensor();
 
   private final Telemetry logger = new Telemetry(kMaxSpeedMps);
 
