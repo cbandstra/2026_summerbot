@@ -1,6 +1,5 @@
 package frc.robot.subsystems;
 
-import java.util.List;
 import java.util.Optional;
 
 import org.photonvision.PhotonCamera;
@@ -22,7 +21,6 @@ public class Vision extends SubsystemBase {
   private final PhotonCamera camera = new PhotonCamera(VisionConstants.kCameraName);
   private Optional<PhotonTrackedTarget> bestTarget = Optional.empty();
   private double bestTargetTimestampSeconds = 0.0;
-  private List<PhotonTrackedTarget> currentTargets = List.of();
 
   // -1 means "not currently targeting anything" - tracked so acquired/lost logging below only
   // prints on a change of PhotonVision's overall "best" target ID, not every loop.
@@ -32,7 +30,6 @@ public class Vision extends SubsystemBase {
   public void periodic() {
     for (var result : camera.getAllUnreadResults()) {
       bestTarget = result.hasTargets() ? Optional.of(result.getBestTarget()) : Optional.empty();
-      currentTargets = result.getTargets();
       if (bestTarget.isPresent()) {
         bestTargetTimestampSeconds = result.getTimestampSeconds();
       }
@@ -48,18 +45,6 @@ public class Vision extends SubsystemBase {
       }
       loggedTargetId = currentId;
     }
-  }
-
-  /**
-   * The best-seen target with the given AprilTag ID, if any tag with that ID is in the most
-   * recently processed camera frame - unlike {@link #hasTarget()}/{@link #getTargetYawDegrees()}
-   * (which track PhotonVision's own overall "best" target regardless of ID), this looks for a
-   * specific tag among all targets in that frame. Its timestamp for latency-compensation
-   * purposes is {@link #getTargetTimestampSeconds()} - every target in a single camera frame
-   * shares the same capture time.
-   */
-  public Optional<PhotonTrackedTarget> getTargetById(int fiducialId) {
-    return currentTargets.stream().filter(t -> t.getFiducialId() == fiducialId).findFirst();
   }
 
   /** True if an AprilTag was seen in the most recently processed camera frame. */
