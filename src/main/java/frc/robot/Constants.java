@@ -88,8 +88,10 @@ public final class Constants {
     // Speed used for every scripted "drive" step. Slow on purpose for testing.
     public static final double kAutoDriveSpeedMps = 1.0;
 
-    // Spin rate (rad/s) used for every scripted "rotate" step.
-    public static final double kAutoRotateSpeedRadPerSec = 1.0;
+    // Spin rate (rad/s) used for every scripted "rotate" step. Only affects the plain "rotate #
+    // degrees" instruction - "align with april tag" and "align with april tag ... and go to it"
+    // use their own separate speed/gain constants, so this is safe to tune independently.
+    public static final double kAutoRotateSpeedRadPerSec = 2.0;
 
     // The beep every drivetrain motor plays when an autonomous step finishes alternates between
     // two tones (Hz), switching every kStepCompleteBeepNoteSeconds, for a total of

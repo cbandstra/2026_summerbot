@@ -420,7 +420,16 @@ public class RobotContainer {
         }, drivetrain),
         Commands.run(() -> {
             Rotation2d currentHeading = drivetrain.getState().Pose.getRotation();
-            turnedRadians[0] += Math.abs(currentHeading.minus(lastHeading[0]).getRadians());
+            double deltaRadians = Math.abs(currentHeading.minus(lastHeading[0]).getRadians());
+            // Ignore anything bigger than the robot could plausibly turn in a single loop -
+            // right after boot, odometry/the gyro can take a moment to report valid data, and a
+            // stale-then-real reading can look like an instant ~180 degree jump, which would
+            // otherwise satisfy the target immediately and skip the rotate entirely. A real
+            // one-loop turn is at most a few degrees even at full speed, so a generous 45 degree
+            // ceiling comfortably separates "actually turning" from "bogus sensor jump."
+            if (deltaRadians <= Math.toRadians(45)) {
+                turnedRadians[0] += deltaRadians;
+            }
             lastHeading[0] = currentHeading;
             drivetrain.setControl(autoDrive.withVelocityX(0).withVelocityY(0).withRotationalRate(spinRate));
         }, drivetrain).until(() -> turnedRadians[0] >= targetRadians),
