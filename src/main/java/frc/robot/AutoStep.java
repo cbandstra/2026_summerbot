@@ -15,4 +15,7 @@ public sealed interface AutoStep {
 
   /** Search for a specific AprilTag ID and turn to face it. */
   record AlignTag(int tagId) implements AutoStep {}
+
+  /** Search for a specific AprilTag ID, then drive up to and center on it. */
+  record LineUpTag(int tagId) implements AutoStep {}
 }

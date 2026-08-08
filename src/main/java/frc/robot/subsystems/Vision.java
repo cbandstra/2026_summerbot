@@ -58,6 +58,11 @@ public class Vision extends SubsystemBase {
     return bestTarget.map(PhotonTrackedTarget::getYaw).orElse(0.0);
   }
 
+  /** Straight-line distance from the camera to the best-seen tag, in meters. 0 if no target. */
+  public double getTargetDistanceMeters() {
+    return bestTarget.map(t -> t.getBestCameraToTarget().getTranslation().getNorm()).orElse(0.0);
+  }
+
   /**
    * When the current best target's camera frame was actually captured - always a little behind
    * "now". Used to correct for lag; see {@link frc.robot.RobotContainer#computeCompensatedYawDegrees}.

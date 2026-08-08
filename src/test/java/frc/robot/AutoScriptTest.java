@@ -59,9 +59,34 @@ class AutoScriptTest {
   }
 
   @Test
+  void lineUpWithTag() {
+    var step = (AutoStep.LineUpTag) AutoScript.parseLine("Find ID 1 and line up with it");
+    assertEquals(1, step.tagId());
+
+    var noSpaceInLineUp = (AutoStep.LineUpTag) AutoScript.parseLine("find id #12 and lineup with it");
+    assertEquals(12, noSpaceInLineUp.tagId());
+  }
+
+  @Test
   void isCaseInsensitive() {
     var step = (AutoStep.Drive) AutoScript.parseLine("DRIVE FORWARD 3 FEET");
     assertEquals(AutoStep.Direction.FORWARD, step.direction());
+  }
+
+  @Test
+  void commentsAndBlankLinesAreSkipped() {
+    var steps = AutoScript.parseLines(new String[] {
+        "# this is a comment",
+        "drive forward 3 feet",
+        "",
+        "  // also a comment",
+        "wait 1 seconds",
+        "   ",
+    });
+
+    assertEquals(2, steps.size());
+    assertEquals(AutoStep.Direction.FORWARD, ((AutoStep.Drive) steps.get(0)).direction());
+    assertEquals(1.0, ((AutoStep.Wait) steps.get(1)).seconds(), 1e-9);
   }
 
   @Test

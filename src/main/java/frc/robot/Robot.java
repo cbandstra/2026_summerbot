@@ -33,7 +33,7 @@ public class Robot extends TimedRobot {
     // driver camera - separate from the OrangePi/PhotonVision cameras, which are for vision
     // processing, not for the human driver to look at. Kept small (low res/fps) since match
     // radio bandwidth is limited and shared with everything else the robot sends.
-    CameraServer.startAutomaticCapture().setVideoMode(PixelFormat.kMJPEG, 320, 240, 15);
+    CameraServer.startAutomaticCapture().setVideoMode(PixelFormat.kMJPEG, 640, 480, 30);
 
     // Instantiate our RobotContainer.  This will perform all our button bindings, and put our
     // autonomous chooser on the dashboard.

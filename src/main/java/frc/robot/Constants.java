@@ -76,6 +76,12 @@ public final class Constants {
 
     // How long (seconds) to spin at the slow rate between each fast pulse of the search spin.
     public static final double kSearchSlowPhaseSeconds = 1;
+
+    // If target lock loses a tag while it was closer than this (meters), the tag was probably
+    // lost because the robot got too close for the camera to see the whole thing - not because
+    // it wandered off. Don't spin away looking for another one in that case; just hold still
+    // until a tag comes back into view or the driver forces a new search (see Force spin button).
+    public static final double kCloseTargetLossDistanceMeters = 1.0;
   }
 
   public static class AutoConstants {
@@ -91,5 +97,51 @@ public final class Constants {
     // How long "align with april tag" searches before giving up, so a missing tag can't stall
     // the whole autonomous sequence forever.
     public static final double kAutoAlignTimeoutSeconds = 5.0;
+
+    // "Find id <n> and line up with it" stops driving once this close (meters) to the tag.
+    public static final double kLineUpDistanceMeters = 1.0;
+
+    // How close (meters) to kLineUpDistanceMeters counts as "close enough" to finish the step.
+    public static final double kLineUpDistanceToleranceMeters = 0.1;
+
+    // "Centered" (for finishing the step) is judged straight from the tag's own pose, not from
+    // yaw-to-target: the tag's Z rotation (how squarely it's facing the camera) must be within
+    // kLineUpCenteredZAngleToleranceDegrees of kLineUpCenteredZAngleTargetDegrees, and its Y
+    // translation (how far left/right of the camera it is) must be within
+    // kLineUpCenteredYToleranceMeters of kLineUpCenteredYTargetMeters.
+    //
+    // The targets aren't exactly 180/0 - measured on the robot 2026-08-08 by lining it up
+    // manually (by eye) with a target and reading what the camera actually reported. The camera
+    // isn't mounted perfectly centered/square on the chassis, so "physically lined up" reads as
+    // slightly off from the theoretical dead-on numbers - these targets correct for that offset.
+    public static final double kLineUpCenteredZAngleTargetDegrees = -176.0;
+    public static final double kLineUpCenteredYTargetMeters = 0.054;
+
+    public static final double kLineUpCenteredZAngleToleranceDegrees = 1.0;
+    public static final double kLineUpCenteredYToleranceMeters = 0.01;
+
+    // How far off-center (degrees) is still "close enough to drive straight at it" while lining
+    // up - the rotation PID keeps refining aim the whole approach, this just gates when it's safe
+    // to start driving forward instead of turning in place first.
+    public static final double kLineUpSteerToleranceDegrees = 10.0;
+
+    // How long "find id <n> and line up with it" searches/drives before giving up, so a missing
+    // tag can't stall the rest of the autonomous sequence forever. Longer than a plain align
+    // since it also has to drive up to the tag afterward.
+    public static final double kLineUpTimeoutSeconds = 10.0;
+
+    // Driving straight at the tag with only rotation correction doesn't actually square the
+    // robot up with it - the Z angle just ends up whatever the approach geometry happens to
+    // produce. This strafes sideways too, proportional to how far the Z angle is from 180
+    // (dead-on), so the robot can actively walk itself square instead of hoping it lands there.
+    // Confirmed correct direction on the robot 2026-08-08.
+    public static final double kLineUpStrafeKP = 0.006;
+
+    // Once the robot's already at kLineUpDistanceMeters and has stopped driving forward, it's
+    // not fighting forward motion anymore, so strafing can be a lot more aggressive to finish
+    // centering quickly - higher gain and a higher speed cap than the gentler in-transit strafe
+    // above.
+    public static final double kLineUpStrafeKPCloseUp = 0.03;
+    public static final double kLineUpCloseStrafeMaxMps = 0.4;
   }
 }

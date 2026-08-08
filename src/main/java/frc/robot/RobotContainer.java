@@ -79,6 +79,11 @@ public class RobotContainer {
   // button is physically held (see configureBindings).
   private boolean m_targetLockToggleOn = false;
 
+  // Distance (meters) to the last tag target lock actually saw. Starts far away so a fresh
+  // search behaves normally. Used to tell "lost the tag because we drove right up to it" (don't
+  // spin away looking for another) from "lost the tag because it's just not in view" (do spin).
+  private double m_targetLockLastDistanceMeters = Double.MAX_VALUE;
+
   // True until the robot's been enabled once since power-on. The gyro zeroes itself to whichever
   // way the robot happens to be pointed when the roboRIO boots - if that's not facing away from
   // the driver station (e.g. it booted on a cart or the pit table), "forward" on the stick drives
@@ -187,10 +192,14 @@ public class RobotContainer {
 
     // Force spin: while target lock has found a tag and is aligning to it, hold this button to
     // interrupt that and force the same pulsed search spin instead - e.g. to deliberately look
-    // away from the current tag. Does nothing unless target lock is currently active.
+    // away from the current tag. Also the only way to resume searching after target lock holds
+    // still for a lost close-up tag (see kCloseTargetLossDistanceMeters below). Does nothing
+    // unless target lock is currently active.
     Trigger forceSpinButton = m_driverController.button(OperatorConstants.kThrustmasterForceSpinButton);
-    forceSpinButton.onTrue(
-        Commands.runOnce(() -> m_targetLockSearch.reset(drivetrain.getState().Pose.getRotation())));
+    forceSpinButton.onTrue(Commands.runOnce(() -> {
+        m_targetLockSearch.reset(drivetrain.getState().Pose.getRotation());
+        m_targetLockLastDistanceMeters = Double.MAX_VALUE;
+    }));
 
     new Trigger(() -> targetLockButton.getAsBoolean() || m_targetLockToggleOn).whileTrue(
         Commands.startRun(
@@ -198,6 +207,7 @@ public class RobotContainer {
                 m_alignRotationController.reset();
                 m_loggedSearching = false;
                 m_targetLockSearch.reset(drivetrain.getState().Pose.getRotation());
+                m_targetLockLastDistanceMeters = Double.MAX_VALUE;
             },
             () -> {
                 double maxSpeed = kMaxSpeedMps * throttleSpeedPercent();
@@ -207,10 +217,20 @@ public class RobotContainer {
                 if (vision.hasTarget() && !forceSpin) {
                     rotationalRate = computeAlignRotationalRate();
                     m_loggedSearching = false;
+                    m_targetLockLastDistanceMeters = vision.getTargetDistanceMeters();
+                } else if (!forceSpin
+                        && m_targetLockLastDistanceMeters < VisionConstants.kCloseTargetLossDistanceMeters) {
+                    // Lost a tag we were right up against - it's almost certainly still there,
+                    // just out of frame. Hold still instead of spinning away from it.
+                    if (!m_loggedSearching) {
+                        RobotLog.log("Target lock: holding still (lost a close-up tag)");
+                        m_loggedSearching = true;
+                    }
+                    rotationalRate = 0.0;
                 } else {
                     if (!m_loggedSearching) {
                         RobotLog.log(forceSpin && vision.hasTarget()
-                            ? "Target lock: forcing search spin (button 4)"
+                            ? "Target lock: forcing search spin (button 3)"
                             : "Looking for April tags");
                         m_loggedSearching = true;
                     }
@@ -336,6 +356,8 @@ public class RobotContainer {
         return Commands.waitSeconds(wait.seconds());
     } else if (step instanceof AutoStep.AlignTag alignTag) {
         return alignToTagCommand(alignTag.tagId());
+    } else if (step instanceof AutoStep.LineUpTag lineUpTag) {
+        return lineUpToTagCommand(lineUpTag.tagId());
     }
     throw new IllegalStateException("Unhandled AutoStep: " + step);
   }
@@ -437,6 +459,97 @@ public class RobotContainer {
         Commands.runOnce(() -> drivetrain.setControl(
             autoDrive.withVelocityX(0).withVelocityY(0).withRotationalRate(0)), drivetrain)
     );
+  }
+
+  /**
+   * Spins to search for AprilTag {@code tagId} (same pulsed search as {@link
+   * #alignToTagCommand}), then drives straight at it while continuously correcting aim, stopping
+   * once {@link AutoConstants#kLineUpDistanceMeters} away and centered. Gives up after {@link
+   * AutoConstants#kLineUpTimeoutSeconds} if it never gets there, so a missing tag can't stall the
+   * rest of the autonomous sequence forever.
+   */
+  private Command lineUpToTagCommand(int tagId) {
+    double[] yawErrorDegrees = {Double.MAX_VALUE};
+    double[] distanceMeters = {Double.MAX_VALUE};
+    double[] tagZAngleDegrees = {Double.MAX_VALUE};
+    double[] cameraToTagYMeters = {Double.MAX_VALUE};
+    PulsedSearch search = new PulsedSearch();
+
+    return Commands.sequence(
+        Commands.runOnce(() -> {
+            m_alignRotationController.reset();
+            search.reset(drivetrain.getState().Pose.getRotation());
+        }, drivetrain),
+        Commands.run(() -> {
+            var target = vision.getTargetById(tagId);
+            double rotationalRate;
+            double vx;
+            double vy;
+            if (target.isPresent()) {
+                double rawYawDegrees = target.get().getYaw();
+                yawErrorDegrees[0] = computeCompensatedYawDegrees(rawYawDegrees, vision.getTargetTimestampSeconds());
+                rotationalRate = computeAlignRotationalRate(rawYawDegrees, vision.getTargetTimestampSeconds());
+                distanceMeters[0] = vision.getTargetDistanceMeters();
+
+                var cameraToTarget = target.get().getBestCameraToTarget();
+                tagZAngleDegrees[0] = Math.toDegrees(cameraToTarget.getRotation().getZ());
+                cameraToTagYMeters[0] = cameraToTarget.getTranslation().getY();
+
+                boolean aimedWellEnoughToDrive =
+                    Math.abs(yawErrorDegrees[0]) <= AutoConstants.kLineUpSteerToleranceDegrees;
+                boolean stillTooFar = distanceMeters[0] - AutoConstants.kLineUpDistanceMeters
+                    > AutoConstants.kLineUpDistanceToleranceMeters;
+                // Negative = forward - same RobotCentric convention as driveStepCommand.
+                vx = (aimedWellEnoughToDrive && stillTooFar)
+                    ? -Math.min(AutoConstants.kAutoDriveSpeedMps, kMaxSpeedMps)
+                    : 0.0;
+
+                double zAngleErrorDegrees = Rotation2d.fromDegrees(tagZAngleDegrees[0])
+                    .minus(Rotation2d.fromDegrees(AutoConstants.kLineUpCenteredZAngleTargetDegrees)).getDegrees();
+                // Once it's stopped driving forward, it's not fighting that motion anymore, so
+                // strafing can be more aggressive to finish centering quickly.
+                double strafeKP = stillTooFar
+                    ? AutoConstants.kLineUpStrafeKP
+                    : AutoConstants.kLineUpStrafeKPCloseUp;
+                double strafeMaxMps = stillTooFar
+                    ? AutoConstants.kAutoDriveSpeedMps
+                    : AutoConstants.kLineUpCloseStrafeMaxMps;
+                vy = MathUtil.clamp(strafeKP * zAngleErrorDegrees, -strafeMaxMps, strafeMaxMps);
+            } else {
+                yawErrorDegrees[0] = Double.MAX_VALUE;
+                distanceMeters[0] = Double.MAX_VALUE;
+                tagZAngleDegrees[0] = Double.MAX_VALUE;
+                cameraToTagYMeters[0] = Double.MAX_VALUE;
+                rotationalRate = search.pulse(drivetrain.getState().Pose.getRotation());
+                vx = 0.0;
+                vy = 0.0;
+            }
+            drivetrain.setControl(autoDrive.withVelocityX(vx).withVelocityY(vy).withRotationalRate(rotationalRate));
+        }, drivetrain, vision)
+            .until(() -> isCentered(tagZAngleDegrees[0], cameraToTagYMeters[0])
+                && Math.abs(distanceMeters[0] - AutoConstants.kLineUpDistanceMeters)
+                    <= AutoConstants.kLineUpDistanceToleranceMeters)
+            .withTimeout(AutoConstants.kLineUpTimeoutSeconds),
+        Commands.runOnce(() -> drivetrain.setControl(
+            autoDrive.withVelocityX(0).withVelocityY(0).withRotationalRate(0)), drivetrain)
+    );
+  }
+
+  /**
+   * True if the tag's own pose (not yaw-to-target) says we're squared up and centered on it:
+   * its Z rotation (how squarely it's facing the camera) within {@link
+   * AutoConstants#kLineUpCenteredZAngleToleranceDegrees} of {@link
+   * AutoConstants#kLineUpCenteredZAngleTargetDegrees}, and its Y translation (how far left/right
+   * of the camera it is) within {@link AutoConstants#kLineUpCenteredYToleranceMeters} of {@link
+   * AutoConstants#kLineUpCenteredYTargetMeters}. Those targets aren't exactly 180/0 - see their
+   * javadoc for why.
+   */
+  private static boolean isCentered(double tagZAngleDegrees, double cameraToTagYMeters) {
+    double zAngleErrorDegrees = Math.abs(Rotation2d.fromDegrees(tagZAngleDegrees)
+        .minus(Rotation2d.fromDegrees(AutoConstants.kLineUpCenteredZAngleTargetDegrees)).getDegrees());
+    double yErrorMeters = Math.abs(cameraToTagYMeters - AutoConstants.kLineUpCenteredYTargetMeters);
+    return zAngleErrorDegrees <= AutoConstants.kLineUpCenteredZAngleToleranceDegrees
+        && yErrorMeters <= AutoConstants.kLineUpCenteredYToleranceMeters;
   }
 
   /**

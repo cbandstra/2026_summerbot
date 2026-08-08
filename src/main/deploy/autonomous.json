@@ -1,9 +1,10 @@
 [
-  "drive forward 1 feet",
-  "wait 1 seconds",
-  "drive right 1 feet",
-  "wait 1 seconds",
-  "drive backward 1 feet",
-  "wait 1 seconds",
-  "drive left 1 feet"
+  "find id 4 and line up with it",
+  "# drive forward 1 feet",
+  "# wait 1 seconds",
+  "# drive right 1 feet",
+  "# wait 1 seconds",
+  "# drive backward 1 feet",
+  "# wait 1 seconds",
+  "# drive left 1 feet"
 ]

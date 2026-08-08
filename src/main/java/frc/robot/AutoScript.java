@@ -18,7 +18,8 @@ import edu.wpi.first.wpilibj.Filesystem;
  *
  * <p>Editing autonomous.json doesn't need a code change, just a redeploy. If a line can't be
  * understood, the whole file is rejected (logged to the console) rather than running part of a
- * script - safer than guessing what a typo meant.
+ * script - safer than guessing what a typo meant. Blank lines, and lines starting with {@code #}
+ * or {@code //} (leading whitespace is fine), are comments and are skipped instead of run.
  */
 public final class AutoScript {
   private static final double kFeetToMeters = 0.3048;
@@ -34,6 +35,9 @@ public final class AutoScript {
       Pattern.CASE_INSENSITIVE);
   private static final Pattern ALIGN_TAG = Pattern.compile(
       "align\\s+(?:with|to)\\s+april\\s*tag\\s+#?(\\d+)",
+      Pattern.CASE_INSENSITIVE);
+  private static final Pattern LINE_UP_TAG = Pattern.compile(
+      "find\\s+id\\s+#?(\\d+)\\s+and\\s+line\\s*up\\s+with\\s+it",
       Pattern.CASE_INSENSITIVE);
 
   private AutoScript() {}
@@ -54,20 +58,28 @@ public final class AutoScript {
       return List.of();
     }
 
+    try {
+      return parseLines(lines);
+    } catch (IllegalArgumentException e) {
+      RobotLog.log("AutoScript: " + e.getMessage() + " - autonomous will do nothing");
+      return List.of();
+    }
+  }
+
+  // Package-private (not private) so AutoScriptTest can exercise these directly without touching
+  // the filesystem.
+  static List<AutoStep> parseLines(String[] lines) {
     List<AutoStep> steps = new ArrayList<>();
-    for (String line : lines) {
-      try {
-        steps.add(parseLine(line.trim()));
-      } catch (IllegalArgumentException e) {
-        RobotLog.log("AutoScript: " + e.getMessage() + " - autonomous will do nothing");
-        return List.of();
+    for (String rawLine : lines) {
+      String line = rawLine.trim();
+      if (line.isEmpty() || line.startsWith("#") || line.startsWith("//")) {
+        continue;
       }
+      steps.add(parseLine(line));
     }
     return steps;
   }
 
-  // Package-private (not private) so AutoScriptTest can exercise it directly without touching
-  // the filesystem.
   static AutoStep parseLine(String line) {
     Matcher drive = DRIVE.matcher(line);
     if (drive.matches()) {
@@ -96,6 +108,11 @@ public final class AutoScript {
     Matcher alignTag = ALIGN_TAG.matcher(line);
     if (alignTag.matches()) {
       return new AutoStep.AlignTag(Integer.parseInt(alignTag.group(1)));
+    }
+
+    Matcher lineUpTag = LINE_UP_TAG.matcher(line);
+    if (lineUpTag.matches()) {
+      return new AutoStep.LineUpTag(Integer.parseInt(lineUpTag.group(1)));
     }
 
     throw new IllegalArgumentException("don't understand instruction \"" + line + "\"");
