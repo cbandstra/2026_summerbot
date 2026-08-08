@@ -67,6 +67,10 @@ public class RobotContainer {
   // So "Looking for April tags" only logs once per search, not every loop.
   private boolean m_loggedSearching = false;
 
+  // Drives target lock's pulsed search spin (see PulsedSearch below). Autonomous's "align with
+  // april tag" gets its own instance per call, since it isn't a long-lived field like this one.
+  private final PulsedSearch m_targetLockSearch = new PulsedSearch();
+
   // How long the target lock button has been held this press - used to tell a quick tap
   // (toggle on/off) from a hold (plain hold-to-activate) on release.
   private final Timer m_targetLockPressTimer = new Timer();
@@ -163,25 +167,36 @@ public class RobotContainer {
         }
     }));
 
+    // Force spin: while target lock has found a tag and is aligning to it, hold this button to
+    // interrupt that and force the same pulsed search spin instead - e.g. to deliberately look
+    // away from the current tag. Does nothing unless target lock is currently active.
+    Trigger forceSpinButton = m_driverController.button(OperatorConstants.kThrustmasterForceSpinButton);
+    forceSpinButton.onTrue(
+        Commands.runOnce(() -> m_targetLockSearch.reset(drivetrain.getState().Pose.getRotation())));
+
     new Trigger(() -> targetLockButton.getAsBoolean() || m_targetLockToggleOn).whileTrue(
         Commands.startRun(
             () -> {
                 m_alignRotationController.reset();
                 m_loggedSearching = false;
+                m_targetLockSearch.reset(drivetrain.getState().Pose.getRotation());
             },
             () -> {
                 double maxSpeed = kMaxSpeedMps * throttleSpeedPercent();
                 double[] translation = computeTranslationVelocity(maxSpeed);
+                boolean forceSpin = forceSpinButton.getAsBoolean();
                 double rotationalRate;
-                if (vision.hasTarget()) {
+                if (vision.hasTarget() && !forceSpin) {
                     rotationalRate = computeAlignRotationalRate();
                     m_loggedSearching = false;
                 } else {
                     if (!m_loggedSearching) {
-                        RobotLog.log("Looking for April tags");
+                        RobotLog.log(forceSpin && vision.hasTarget()
+                            ? "Target lock: forcing search spin (button 4)"
+                            : "Looking for April tags");
                         m_loggedSearching = true;
                     }
-                    rotationalRate = Math.min(VisionConstants.kSearchRotationRadPerSec, kMaxAngularRate);
+                    rotationalRate = m_targetLockSearch.pulse(drivetrain.getState().Pose.getRotation());
                 }
                 drivetrain.setControl(drive.withVelocityX(translation[0])
                     .withVelocityY(translation[1])
@@ -379,9 +394,13 @@ public class RobotContainer {
    */
   private Command alignToTagCommand(int tagId) {
     double[] lastYawErrorDegrees = {Double.MAX_VALUE};
+    PulsedSearch search = new PulsedSearch();
 
     return Commands.sequence(
-        Commands.runOnce(() -> m_alignRotationController.reset(), drivetrain),
+        Commands.runOnce(() -> {
+            m_alignRotationController.reset();
+            search.reset(drivetrain.getState().Pose.getRotation());
+        }, drivetrain),
         Commands.run(() -> {
             var target = vision.getTargetById(tagId);
             double rotationalRate;
@@ -391,7 +410,7 @@ public class RobotContainer {
                 rotationalRate = computeAlignRotationalRate(rawYawDegrees, vision.getTargetTimestampSeconds());
             } else {
                 lastYawErrorDegrees[0] = Double.MAX_VALUE;
-                rotationalRate = Math.min(VisionConstants.kSearchRotationRadPerSec, kMaxAngularRate);
+                rotationalRate = search.pulse(drivetrain.getState().Pose.getRotation());
             }
             drivetrain.setControl(autoDrive.withVelocityX(0).withVelocityY(0).withRotationalRate(rotationalRate));
         }, drivetrain, vision)
@@ -400,6 +419,50 @@ public class RobotContainer {
         Commands.runOnce(() -> drivetrain.setControl(
             autoDrive.withVelocityX(0).withVelocityY(0).withRotationalRate(0)), drivetrain)
     );
+  }
+
+  /**
+   * Turns the continuous "spin looking for a tag" behavior into pulses: spin {@link
+   * VisionConstants#kSearchSpinDegrees} degrees, sit still for {@link
+   * VisionConstants#kSearchPauseSeconds}, then spin again - repeat until a tag is seen. Gives the
+   * camera a steady look between pulses instead of only ever seeing tags blur past mid-turn.
+   *
+   * <p>Call {@link #reset} once when a search starts, then {@link #pulse} every loop while no
+   * target is seen.
+   */
+  private static final class PulsedSearch {
+    private final Timer m_pauseTimer = new Timer();
+    private Rotation2d m_lastHeading = Rotation2d.kZero;
+    private double m_spunDegrees = 0.0;
+    private boolean m_paused = false;
+
+    void reset(Rotation2d currentHeading) {
+        m_lastHeading = currentHeading;
+        m_spunDegrees = 0.0;
+        m_paused = false;
+    }
+
+    /** Rotational rate (rad/s) to command this loop - 0 while paused between pulses. */
+    double pulse(Rotation2d currentHeading) {
+        if (m_paused) {
+            if (m_pauseTimer.hasElapsed(VisionConstants.kSearchPauseSeconds)) {
+                m_paused = false;
+                m_spunDegrees = 0.0;
+                m_lastHeading = currentHeading;
+            }
+            return 0.0;
+        }
+
+        m_spunDegrees += Math.abs(currentHeading.minus(m_lastHeading).getDegrees());
+        m_lastHeading = currentHeading;
+
+        if (m_spunDegrees >= VisionConstants.kSearchSpinDegrees) {
+            m_paused = true;
+            m_pauseTimer.restart();
+            return 0.0;
+        }
+        return Math.min(VisionConstants.kSearchRotationRadPerSec, kMaxAngularRate);
+    }
   }
 
   /**

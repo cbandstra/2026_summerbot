@@ -21,7 +21,8 @@ public final class Constants {
     // Button numbers (check the Driver Station's USB tab if these seem wrong).
     public static final int kThrustmasterTriggerButton = 1;
     public static final int kThrustmasterTargetLockButton = 2;
-    public static final int kThrustmasterRecenterButton = 3;
+    public static final int kThrustmasterRecenterButton = 4;
+    public static final int kThrustmasterForceSpinButton = 3;
 
     // A press shorter than this toggles target lock on/off. A press this long or longer acts
     // like plain hold-to-activate instead, and always ends off on release (even if it was
@@ -61,8 +62,16 @@ public final class Constants {
     public static final double kAlignRotationKI = 0.0;
     public static final double kAlignRotationKD = 0.0;
 
-    // How fast (rad/s) to spin while searching for a tag during target lock. Kept slow on purpose.
-    public static final double kSearchRotationRadPerSec = 1.0;
+    // How fast (rad/s) to spin during each pulse while searching for a tag.
+    public static final double kSearchRotationRadPerSec = 2.5;
+
+    // Search doesn't spin continuously - it spins this many degrees, pauses, spins again, and so
+    // on until a tag is seen. Gives the camera a steady look between pulses instead of only ever
+    // seeing tags blur past while turning.
+    public static final double kSearchSpinDegrees = 60.0;
+
+    // How long (seconds) to sit still between each pulse of the search spin.
+    public static final double kSearchPauseSeconds = 0.5;
   }
 
   public static class AutoConstants {
