@@ -90,7 +90,7 @@ These are all tunable in [`Constants.java`](src/main/java/frc/robot/Constants.ja
 A single PhotonVision camera (named **`OV9281_April_Tags`** in the PhotonVision UI) provides
 AprilTag targets. Yaw readings are latency-compensated against the robot's odometry history so alignment
 doesn't overshoot on stale frames. When no tag is in view, the robot searches by spinning in
-pulses (45° of spin, then a 0.5s pause, repeated) rather than spinning continuously. Alignment PID
+pulses (60° of spin, then a 0.5s pause, repeated) rather than spinning continuously. Alignment PID
 gains and the search pulse's spin rate/degrees/pause live in `VisionConstants` in
 [`Constants.java`](src/main/java/frc/robot/Constants.java).
 
