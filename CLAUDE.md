@@ -30,9 +30,15 @@ JAVA_HOME="/c/Users/Public/wpilib/2026/jdk" ./gradlew compileJava --offline   # 
 
 ### Control & compute
 - **roboRIO v1** — main robot controller (too weak to run AprilTag detection itself).
-- **OrangePi 5** coprocessor running **PhotonVision**, with a **Logitech C920** webcam.
-  - Camera must be named **`front cam`** in the PhotonVision UI (must match
-    `VisionConstants.kCameraName` in code).
+- **OrangePi 5** coprocessor running **PhotonVision**, with two cameras plugged directly into the
+  board's own USB ports (no hub — a powered hub was tried and caused bandwidth-related "Camera
+  Lost" errors at higher resolutions, confirmed 2026-08-07):
+  - **Arducam OV9281** (global shutter) for AprilTags. Must be named **`OV9281_April_Tags`** in
+    the PhotonVision UI (must match `VisionConstants.kCameraName` in code). Replaced the original
+    Logitech C920 to fix rolling-shutter motion blur during the search-and-align spin.
+  - **Arducam OV9782** for Object Detection (RKNN models on the RK3588S's NPU), nicknamed
+    `OV9782_Object_Detection` in PhotonVision. Not currently wired into robot code - PhotonVision
+    only, no `frc.robot` integration yet.
   - AprilTag pipeline: 36h11, 2026 field layout. The 2026 season has two layouts (welded vs
     AndyMark) — verify which applies before an event.
 - **Driver controller:** Thrustmaster T.16000M flight stick on USB port 0.

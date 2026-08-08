@@ -87,8 +87,8 @@ These are all tunable in [`Constants.java`](src/main/java/frc/robot/Constants.ja
 
 ## Vision
 
-A single PhotonVision camera (named **`front cam`** in the PhotonVision UI) provides AprilTag
-targets. Yaw readings are latency-compensated against the robot's odometry history so alignment
+A single PhotonVision camera (named **`OV9281_April_Tags`** in the PhotonVision UI) provides
+AprilTag targets. Yaw readings are latency-compensated against the robot's odometry history so alignment
 doesn't overshoot on stale frames. Alignment PID gains and the search-spin rate live in
 `VisionConstants` in [`Constants.java`](src/main/java/frc/robot/Constants.java).
 

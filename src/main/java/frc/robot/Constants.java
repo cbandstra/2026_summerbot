@@ -47,7 +47,7 @@ public final class Constants {
 
   public static class VisionConstants {
     // Must match the camera's name in the PhotonVision UI.
-    public static final String kCameraName = "front cam";
+    public static final String kCameraName = "OV9281_April_Tags";
 
     // PID gains for turning to face the best-seen AprilTag (button 2). Tune kP first; only add
     // kD if it oscillates before settling.
