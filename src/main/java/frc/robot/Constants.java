@@ -62,16 +62,20 @@ public final class Constants {
     public static final double kAlignRotationKI = 0.0;
     public static final double kAlignRotationKD = 0.0;
 
-    // How fast (rad/s) to spin during each pulse while searching for a tag.
-    public static final double kSearchRotationRadPerSec = 2.5;
+    // How fast (rad/s) to spin during each fast pulse while searching for a tag.
+    public static final double kSearchRotationRadPerSec = 2.0;
 
-    // Search doesn't spin continuously - it spins this many degrees, pauses, spins again, and so
-    // on until a tag is seen. Gives the camera a steady look between pulses instead of only ever
-    // seeing tags blur past while turning.
-    public static final double kSearchSpinDegrees = 50.0;
+    // How fast (rad/s) to spin during the slow phase between pulses. Slower than the fast pulse,
+    // but not stopped, so the camera gets a steadier look without giving up ground entirely.
+    public static final double kSearchSlowRotationRadPerSec = 0.5;
 
-    // How long (seconds) to sit still between each pulse of the search spin.
-    public static final double kSearchPauseSeconds = 0.5;
+    // Search alternates fast/slow - it spins fast this many degrees, then spins slow for
+    // kSearchSlowPhaseSeconds, then spins fast again, and so on until a tag is seen. Gives the
+    // camera a steadier look during the slow phase instead of only ever seeing tags blur past.
+    public static final double kSearchSpinDegrees = 20.0;
+
+    // How long (seconds) to spin at the slow rate between each fast pulse of the search spin.
+    public static final double kSearchSlowPhaseSeconds = 1;
   }
 
   public static class AutoConstants {

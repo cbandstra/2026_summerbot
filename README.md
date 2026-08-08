@@ -31,7 +31,7 @@ an angle.
 | Button | Name | Behavior |
 |---|---|---|
 | 1 | Trigger | **Hold** — lock the wheels in an X pattern (brake; resists being pushed). |
-| 2 | Target lock | **Tap** (under 1 second) to toggle on/off — spins in place looking for any AprilTag (in 50° pulses, pausing 0.5s between each so the camera gets a steady look), then auto-align rotation to it once seen, hands-free until tapped again. **Hold** it instead to activate the same behavior only while held, exactly like a plain hold button — always ends off on release, even if it was already toggled on. You still steer translation with the stick either way; only rotation is taken over. Logs "Looking for April tags" while searching. Turns off automatically if the robot is disabled. |
+| 2 | Target lock | **Tap** (under 1 second) to toggle on/off — spins in place looking for any AprilTag (fast for 30° at a time, then slower for 0.75s between each pulse — never a full stop — so the camera gets a steadier look), then auto-align rotation to it once seen, hands-free until tapped again. **Hold** it instead to activate the same behavior only while held, exactly like a plain hold button — always ends off on release, even if it was already toggled on. You still steer translation with the stick either way; only rotation is taken over. Logs "Looking for April tags" while searching. Turns off automatically if the robot is disabled. |
 | 3 | Force spin | **Hold** — only has an effect while target lock (button 2) is active. Normally, once target lock finds a tag it stops spinning and smoothly aligns to it; holding this button instead forces the pulsed search spin to keep happening even though a tag is in view, as if none had been found. Releasing it goes straight back to aligning if a tag is still visible. |
 | 4 | Recenter | **Press** — makes wherever the robot is currently facing the new "forward" for field-centric driving. Doesn't move the robot or change its tracked field position, just which way the stick's forward points from now on. Useful if the robot was hand-placed at an angle, or you want to redefine forward mid-match. |
 
@@ -61,7 +61,7 @@ Example:
 | `drive <forward\|backward\|left\|right> <number> feet` | `drive forward 3 feet` | Distance is measured from odometry, not timed — accurate regardless of battery voltage or carpet friction. `foot`/`feet` both work. Direction is robot-relative (whichever way the robot is facing when the step starts), not field-relative. |
 | `rotate <number> degrees` | `rotate 90 degrees` | Turns in place. A bare number is signed: positive = counterclockwise, negative = clockwise (matches the rest of the codebase's convention). You can instead write `rotate left <number> degrees` or `rotate right <number> degrees`, which is usually clearer. `degree`/`degrees` both work. |
 | `wait <number> seconds` | `wait 1.5 seconds` | Just sits still. `second`/`seconds` both work. |
-| `align with april tag <number>` | `align with april tag #4` | Spins (in the same 50°-pulse, 0.5s-pause pattern as target lock) to search for that specific AprilTag ID, then turns to face it. Also accepts `align to april tag 4` (with or without the `#`). Gives up after a few seconds if the tag is never found, so a missing tag can't stall the rest of the script. |
+| `align with april tag <number>` | `align with april tag #4` | Spins (in the same fast/slow pulse pattern as target lock) to search for that specific AprilTag ID, then turns to face it. Also accepts `align to april tag 4` (with or without the `#`). Gives up after a few seconds if the tag is never found, so a missing tag can't stall the rest of the script. |
 
 If a line doesn't match one of these exactly, **the whole file is rejected** (logged to the RioLog
 console with the exact bad line) and autonomous does nothing that run, rather than guessing at a
@@ -94,9 +94,10 @@ These are all tunable in [`Constants.java`](src/main/java/frc/robot/Constants.ja
 
 A single PhotonVision camera (named **`OV9281_April_Tags`** in the PhotonVision UI) provides
 AprilTag targets. Yaw readings are latency-compensated against the robot's odometry history so alignment
-doesn't overshoot on stale frames. When no tag is in view, the robot searches by spinning in
-pulses (50° of spin, then a 0.5s pause, repeated) rather than spinning continuously. Alignment PID
-gains and the search pulse's spin rate/degrees/pause live in `VisionConstants` in
+doesn't overshoot on stale frames. When no tag is in view, the robot searches by alternating
+fast/slow spin pulses (30° at the fast rate, then 0.75s at a slower rate, repeated - never a full
+stop) instead of spinning continuously at one speed. Alignment PID gains and the search pulse's
+speeds/degrees/duration live in `VisionConstants` in
 [`Constants.java`](src/main/java/frc/robot/Constants.java).
 
 ### Driver camera

@@ -440,44 +440,45 @@ public class RobotContainer {
   }
 
   /**
-   * Turns the continuous "spin looking for a tag" behavior into pulses: spin {@link
-   * VisionConstants#kSearchSpinDegrees} degrees, sit still for {@link
-   * VisionConstants#kSearchPauseSeconds}, then spin again - repeat until a tag is seen. Gives the
-   * camera a steady look between pulses instead of only ever seeing tags blur past mid-turn.
+   * Turns the continuous "spin looking for a tag" behavior into alternating fast/slow pulses:
+   * spin fast for {@link VisionConstants#kSearchSpinDegrees} degrees, spin slow for {@link
+   * VisionConstants#kSearchSlowPhaseSeconds}, then spin fast again - repeat until a tag is seen.
+   * Gives the camera a steadier look during the slow phase instead of only ever seeing tags blur
+   * past mid-turn, without ever fully stopping.
    *
    * <p>Call {@link #reset} once when a search starts, then {@link #pulse} every loop while no
    * target is seen.
    */
   private static final class PulsedSearch {
-    private final Timer m_pauseTimer = new Timer();
+    private final Timer m_slowPhaseTimer = new Timer();
     private Rotation2d m_lastHeading = Rotation2d.kZero;
     private double m_spunDegrees = 0.0;
-    private boolean m_paused = false;
+    private boolean m_slowPhase = false;
 
     void reset(Rotation2d currentHeading) {
         m_lastHeading = currentHeading;
         m_spunDegrees = 0.0;
-        m_paused = false;
+        m_slowPhase = false;
     }
 
-    /** Rotational rate (rad/s) to command this loop - 0 while paused between pulses. */
+    /** Rotational rate (rad/s) to command this loop - fast during a pulse, slow between them. */
     double pulse(Rotation2d currentHeading) {
-        if (m_paused) {
-            if (m_pauseTimer.hasElapsed(VisionConstants.kSearchPauseSeconds)) {
-                m_paused = false;
+        if (m_slowPhase) {
+            if (m_slowPhaseTimer.hasElapsed(VisionConstants.kSearchSlowPhaseSeconds)) {
+                m_slowPhase = false;
                 m_spunDegrees = 0.0;
                 m_lastHeading = currentHeading;
             }
-            return 0.0;
+            return Math.min(VisionConstants.kSearchSlowRotationRadPerSec, kMaxAngularRate);
         }
 
         m_spunDegrees += Math.abs(currentHeading.minus(m_lastHeading).getDegrees());
         m_lastHeading = currentHeading;
 
         if (m_spunDegrees >= VisionConstants.kSearchSpinDegrees) {
-            m_paused = true;
-            m_pauseTimer.restart();
-            return 0.0;
+            m_slowPhase = true;
+            m_slowPhaseTimer.restart();
+            return Math.min(VisionConstants.kSearchSlowRotationRadPerSec, kMaxAngularRate);
         }
         return Math.min(VisionConstants.kSearchRotationRadPerSec, kMaxAngularRate);
     }
