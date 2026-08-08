@@ -71,6 +71,10 @@ If a line doesn't match one of these exactly (and isn't a comment), **the whole 
 (logged to the RioLog console with the exact bad line) and autonomous does nothing that run,
 rather than guessing at a typo and running a partial or wrong script.
 
+Each step beeps once it finishes, played through one of the drivetrain's own Kraken motors (no
+extra speaker hardware needed) — tone and duration are tunable via `kStepCompleteBeepHz`/
+`kStepCompleteBeepSeconds` in `AutoConstants`.
+
 All the speeds/tolerances used above (drive speed, rotate speed, align tolerance, align timeout)
 are tunable in `AutoConstants` in [`Constants.java`](src/main/java/frc/robot/Constants.java) — the
 script only controls direction/distance/angle/tag ID, not speed.

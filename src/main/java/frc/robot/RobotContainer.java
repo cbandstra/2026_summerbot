@@ -6,9 +6,12 @@ package frc.robot;
 
 import static edu.wpi.first.units.Units.MetersPerSecond;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import com.ctre.phoenix6.Utils;
+import com.ctre.phoenix6.controls.MusicTone;
+import com.ctre.phoenix6.hardware.TalonFX;
 import com.ctre.phoenix6.swerve.SwerveModule.DriveRequestType;
 import com.ctre.phoenix6.swerve.SwerveRequest;
 
@@ -658,9 +661,56 @@ public class RobotContainer {
   }
 
   /**
+   * Beeps briefly using every drivetrain motor at once (both drive and steer motors on every
+   * module) - Kraken/Falcon (TalonFX) motors can play a tone directly, so no extra speaker
+   * hardware is needed, and using all of them instead of just one makes it noticeably louder.
+   * Alternates between two tones every {@link AutoConstants#kStepCompleteBeepNoteSeconds} for a
+   * more attention-grabbing "beep-boop" instead of one flat tone. Used to audibly mark each
+   * autonomous step finishing. Silences itself again afterward so it doesn't keep humming into
+   * the next step.
+   *
+   * <p>{@code drivetrain.setControl(null)} first releases the motors from the drivetrain's own
+   * background control thread - without this, that thread keeps re-commanding them in parallel
+   * at high frequency and wins the race against our tone almost every time, so nothing is heard
+   * (confirmed 2026-08-08: the tone was silently losing that race). Restores normal (stopped)
+   * drivetrain control afterward.
+   */
+  private Command beepCommand() {
+    List<TalonFX> beepMotors = new ArrayList<>();
+    for (var module : drivetrain.getModules()) {
+        beepMotors.add(module.getDriveMotor());
+        beepMotors.add(module.getSteerMotor());
+    }
+    Timer beepTimer = new Timer();
+    return Commands.sequence(
+        Commands.runOnce(() -> RobotLog.log(String.format(
+            "Step complete: beeping for %.2fs", AutoConstants.kStepCompleteBeepSeconds))),
+        Commands.runOnce(() -> {
+            drivetrain.setControl(null);
+            beepTimer.restart();
+        }, drivetrain),
+        Commands.run(() -> {
+            long noteIndex = (long) (beepTimer.get() / AutoConstants.kStepCompleteBeepNoteSeconds);
+            double hz = (noteIndex % 2 == 0)
+                ? AutoConstants.kStepCompleteBeepHz
+                : AutoConstants.kStepCompleteBeepHz2;
+            for (TalonFX beepMotor : beepMotors) {
+                beepMotor.setControl(new MusicTone(hz));
+            }
+        }, drivetrain).withTimeout(AutoConstants.kStepCompleteBeepSeconds)
+    ).finallyDo(() -> {
+        for (TalonFX beepMotor : beepMotors) {
+            beepMotor.setControl(new MusicTone(0));
+        }
+        drivetrain.setControl(autoDrive.withVelocityX(0).withVelocityY(0).withRotationalRate(0));
+    });
+  }
+
+  /**
    * Command to run in autonomous, built from the instructions in deploy/autonomous.json (see
    * README.md for the supported instructions). Returns null (nothing runs) if that file is
-   * missing or has a mistake in it - {@link Robot} skips scheduling when this is null.
+   * missing or has a mistake in it - {@link Robot} skips scheduling when this is null. Each step
+   * beeps once it finishes - see {@link #beepCommand}.
    *
    * @return the command to run in autonomous, or null for none
    */
@@ -668,6 +718,8 @@ public class RobotContainer {
     if (m_autoSteps.isEmpty()) {
         return null;
     }
-    return Commands.sequence(m_autoSteps.stream().map(this::autoStepCommand).toArray(Command[]::new));
+    return Commands.sequence(m_autoSteps.stream()
+        .map(step -> autoStepCommand(step).andThen(beepCommand()))
+        .toArray(Command[]::new));
   }
 }

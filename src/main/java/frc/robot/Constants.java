@@ -91,6 +91,14 @@ public final class Constants {
     // Spin rate (rad/s) used for every scripted "rotate" step.
     public static final double kAutoRotateSpeedRadPerSec = 1.0;
 
+    // The beep every drivetrain motor plays when an autonomous step finishes alternates between
+    // two tones (Hz), switching every kStepCompleteBeepNoteSeconds, for a total of
+    // kStepCompleteBeepSeconds - see RobotContainer.beepCommand().
+    public static final double kStepCompleteBeepHz = 880.0;
+    public static final double kStepCompleteBeepHz2 = 660.0;
+    public static final double kStepCompleteBeepNoteSeconds = 0.15;
+    public static final double kStepCompleteBeepSeconds = 0.5;
+
     // Yaw error (degrees) within which "align with april tag" counts as done.
     public static final double kAutoAlignToleranceDegrees = 1.5;
 

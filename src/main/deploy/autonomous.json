@@ -1,6 +1,7 @@
 [
-  "// rotate 180 degrees counterclockwise",
+  "rotate 180 degrees counterclockwise",
   "align with april tag 4 and go to it",
+  "align with april tag 2 and go to it",
 
   "// --- Reference: every supported instruction (see README.md); # stands in for a number ---",
   "// drive forward # feet",
