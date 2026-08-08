@@ -23,6 +23,7 @@ public final class Constants {
     public static final int kThrustmasterTargetLockButton = 2;
     public static final int kThrustmasterRecenterButton = 8;
     public static final int kThrustmasterForceSpinButton = 3;
+    public static final int kThrustmasterForceSpinClockwiseButton = 4;
 
     // A press shorter than this toggles target lock on/off. A press this long or longer acts
     // like plain hold-to-activate instead, and always ends off on release (even if it was

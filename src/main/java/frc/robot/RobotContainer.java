@@ -67,8 +67,11 @@ public class RobotContainer {
       VisionConstants.kAlignRotationKD
   );
 
-  // So "Looking for April tags" only logs once per search, not every loop.
-  private boolean m_loggedSearching = false;
+  // The search "reason" text last actually logged (null while aligning/not searching) - logging
+  // is gated on this CHANGING, not just on whether it's searching at all, so e.g. switching from
+  // a natural search to a button-4-forced clockwise one mid-search logs a new line instead of
+  // being silently suppressed because something was already being logged.
+  private String m_loggedSearchReason = null;
 
   // Drives target lock's pulsed search spin (see PulsedSearch below). Autonomous's "align with
   // april tag" gets its own instance per call, since it isn't a long-lived field like this one.
@@ -86,6 +89,19 @@ public class RobotContainer {
   // search behaves normally. Used to tell "lost the tag because we drove right up to it" (don't
   // spin away looking for another) from "lost the tag because it's just not in view" (do spin).
   private double m_targetLockLastDistanceMeters = Double.MAX_VALUE;
+
+  // True while button 4's clockwise search override is armed. Unlike button 3 (which only
+  // overrides while physically held), this latches on a single press and keeps forcing a
+  // clockwise search - ignoring whatever tag's currently in view - until a tag is genuinely
+  // (re)acquired. Cleared there, or wherever target lock itself turns off.
+  private boolean m_forcingClockwiseUntilFound = false;
+
+  // True once a tag's gone out of view at least once since m_forcingClockwiseUntilFound was
+  // armed. A tag can already be in view the instant button 4 is pressed (the one target lock was
+  // already aligned to) - without this, seeing it would immediately clear the override before the
+  // robot ever turns away, defeating the whole point. Only once it's been lost and THEN seen again
+  // does that count as "found" for clearing the override.
+  private boolean m_forcingClockwiseSeenLoss = false;
 
   // True until the robot's been enabled once since power-on. The gyro zeroes itself to whichever
   // way the robot happens to be pointed when the roboRIO boots - if that's not facing away from
@@ -148,6 +164,7 @@ public class RobotContainer {
             m_targetLockToggleOn = false;
             RobotLog.log("Target lock: OFF (robot disabled)");
         }
+        m_forcingClockwiseUntilFound = false;
     }));
 
     // First time the robot's enabled after booting, treat wherever it's currently facing as
@@ -191,53 +208,103 @@ public class RobotContainer {
             m_targetLockToggleOn = false;
             RobotLog.log(String.format("Target lock: OFF (held %.2fs)", heldSeconds));
         }
+        if (!m_targetLockToggleOn) {
+            m_forcingClockwiseUntilFound = false;
+        }
     }));
 
     // Force spin: while target lock has found a tag and is aligning to it, hold this button to
     // interrupt that and force the same pulsed search spin instead - e.g. to deliberately look
     // away from the current tag. Also the only way to resume searching after target lock holds
-    // still for a lost close-up tag (see kCloseTargetLossDistanceMeters below). Does nothing
-    // unless target lock is currently active.
+    // still for a lost close-up tag (see kCloseTargetLossDistanceMeters below). If target lock
+    // isn't already on, this turns it on hands-free (same as tapping button 2) instead of doing
+    // nothing - but only button 2 can turn it back off; this button never disables it.
     Trigger forceSpinButton = m_driverController.button(OperatorConstants.kThrustmasterForceSpinButton);
     forceSpinButton.onTrue(Commands.runOnce(() -> {
+        enableTargetLockIfOff();
         m_targetLockSearch.reset(drivetrain.getState().Pose.getRotation());
         m_targetLockLastDistanceMeters = Double.MAX_VALUE;
+    }));
+
+    // Same idea as force spin, but forces the search clockwise instead of the default
+    // counterclockwise. A single press is enough - it latches, ignoring whatever tag's currently
+    // in view (even the one target lock's already aligned to) and forcing a clockwise search
+    // until a tag is genuinely (re)acquired, not just while held. Once that happens it locks onto
+    // that tag like normal; the NEXT time a search is needed (this tag's lost, button 3, etc.) it
+    // defaults back to counterclockwise. Also turns target lock on if it isn't already, same as
+    // button 3 above.
+    Trigger forceSpinClockwiseButton =
+        m_driverController.button(OperatorConstants.kThrustmasterForceSpinClockwiseButton);
+    forceSpinClockwiseButton.onTrue(Commands.runOnce(() -> {
+        enableTargetLockIfOff();
+        m_targetLockSearch.reset(drivetrain.getState().Pose.getRotation());
+        m_targetLockLastDistanceMeters = Double.MAX_VALUE;
+        m_forcingClockwiseUntilFound = true;
+        m_forcingClockwiseSeenLoss = false;
     }));
 
     new Trigger(() -> targetLockButton.getAsBoolean() || m_targetLockToggleOn).whileTrue(
         Commands.startRun(
             () -> {
                 m_alignRotationController.reset();
-                m_loggedSearching = false;
+                m_loggedSearchReason = null;
                 m_targetLockSearch.reset(drivetrain.getState().Pose.getRotation());
                 m_targetLockLastDistanceMeters = Double.MAX_VALUE;
             },
             () -> {
                 double maxSpeed = kMaxSpeedMps * throttleSpeedPercent();
                 double[] translation = computeTranslationVelocity(maxSpeed);
-                boolean forceSpin = forceSpinButton.getAsBoolean();
+                boolean forceSpin3 = forceSpinButton.getAsBoolean();
+                // Button 4 latches (see m_forcingClockwiseUntilFound's own comment) rather than
+                // needing to stay held. It only counts as "found" - clearing the override - once
+                // a tag's been lost and then reacquired, not just whatever was already in view the
+                // instant the button was pressed.
+                if (m_forcingClockwiseUntilFound) {
+                    if (vision.hasTarget()) {
+                        if (m_forcingClockwiseSeenLoss) {
+                            m_forcingClockwiseUntilFound = false;
+                        }
+                    } else {
+                        m_forcingClockwiseSeenLoss = true;
+                    }
+                }
+                boolean forceSpinClockwise = m_forcingClockwiseUntilFound;
                 double rotationalRate;
-                if (vision.hasTarget() && !forceSpin) {
+                // Both force-spin buttons override an already-found target while forcing - that's
+                // their whole purpose, deliberately looking away from a locked tag to find a new
+                // one.
+                if (vision.hasTarget() && !forceSpin3 && !forceSpinClockwise) {
                     rotationalRate = computeAlignRotationalRate();
-                    m_loggedSearching = false;
+                    m_loggedSearchReason = null;
                     m_targetLockLastDistanceMeters = vision.getTargetDistanceMeters();
-                } else if (!forceSpin
+                } else if (!forceSpin3 && !forceSpinClockwise
                         && m_targetLockLastDistanceMeters < VisionConstants.kCloseTargetLossDistanceMeters) {
                     // Lost a tag we were right up against - it's almost certainly still there,
                     // just out of frame. Hold still instead of spinning away from it.
-                    if (!m_loggedSearching) {
-                        RobotLog.log("Target lock: holding still (lost a close-up tag)");
-                        m_loggedSearching = true;
+                    String reason = "Target lock: holding still (lost a close-up tag)";
+                    if (!reason.equals(m_loggedSearchReason)) {
+                        RobotLog.log(reason);
+                        m_loggedSearchReason = reason;
                     }
                     rotationalRate = 0.0;
                 } else {
-                    if (!m_loggedSearching) {
-                        RobotLog.log(forceSpin && vision.hasTarget()
-                            ? "Target lock: forcing search spin (button 3)"
-                            : "Looking for April tags");
-                        m_loggedSearching = true;
+                    String reason;
+                    if (forceSpinClockwise) {
+                        reason = "Target lock: forcing clockwise search (button 4)";
+                    } else if (forceSpin3 && vision.hasTarget()) {
+                        reason = "Target lock: forcing search spin (button 3)";
+                    } else {
+                        reason = "Looking for April tags";
                     }
-                    rotationalRate = m_targetLockSearch.pulse(drivetrain.getState().Pose.getRotation());
+                    if (!reason.equals(m_loggedSearchReason)) {
+                        RobotLog.log(reason);
+                        m_loggedSearchReason = reason;
+                    }
+                    // Pulse's magnitude is always positive (counterclockwise); flip it negative
+                    // to go clockwise instead, same wraparound/fast-slow bookkeeping either way.
+                    double directionSign = forceSpinClockwise ? -1.0 : 1.0;
+                    rotationalRate = directionSign
+                        * m_targetLockSearch.pulse(drivetrain.getState().Pose.getRotation());
                 }
                 drivetrain.setControl(drive.withVelocityX(translation[0])
                     .withVelocityY(translation[1])
@@ -248,6 +315,18 @@ public class RobotContainer {
     );
 
     drivetrain.registerTelemetry(logger::telemeterize);
+  }
+
+  /**
+   * Turns target lock on (hands-free, same effect as tapping button 2) if it isn't already -
+   * used by the force spin buttons so pressing them works even if target lock hasn't been
+   * started yet. Only button 2's own tap/hold logic ever turns it back off.
+   */
+  private void enableTargetLockIfOff() {
+    if (!m_targetLockToggleOn) {
+        m_targetLockToggleOn = true;
+        RobotLog.log("Target lock: ON (auto-enabled by force spin button)");
+    }
   }
 
   /** Maps the throttle slider to a speed fraction: all the way back = fastest, forward = slowest. */
