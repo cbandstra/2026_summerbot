@@ -75,11 +75,11 @@ class AutoScriptTest {
 
   @Test
   void lineUpWithTag() {
-    var step = (AutoStep.LineUpTag) AutoScript.parseLine("Find ID 1 and line up with it");
+    var step = (AutoStep.LineUpTag) AutoScript.parseLine("Align With April Tag 1 and go to it");
     assertEquals(1, step.tagId());
 
-    var noSpaceInLineUp = (AutoStep.LineUpTag) AutoScript.parseLine("find id #12 and lineup with it");
-    assertEquals(12, noSpaceInLineUp.tagId());
+    var withHashAndTo = (AutoStep.LineUpTag) AutoScript.parseLine("align to april tag #12 and go to it");
+    assertEquals(12, withHashAndTo.tagId());
   }
 
   @Test

@@ -38,7 +38,7 @@ public final class AutoScript {
       "align\\s+(?:with|to)\\s+april\\s*tag\\s+#?(\\d+)",
       Pattern.CASE_INSENSITIVE);
   private static final Pattern LINE_UP_TAG = Pattern.compile(
-      "find\\s+id\\s+#?(\\d+)\\s+and\\s+line\\s*up\\s+with\\s+it",
+      "align\\s+(?:with|to)\\s+april\\s*tag\\s+#?(\\d+)\\s+and\\s+go\\s+to\\s+it",
       Pattern.CASE_INSENSITIVE);
 
   private AutoScript() {}

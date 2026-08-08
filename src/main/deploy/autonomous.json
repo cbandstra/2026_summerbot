@@ -1,6 +1,6 @@
 [
-  "rotate 180 degrees counterclockwise",
-  "find id 4 and line up with it",
+  "// rotate 180 degrees counterclockwise",
+  "align with april tag 4 and go to it",
 
   "// --- Reference: every supported instruction (see README.md); # stands in for a number ---",
   "// drive forward # feet",
@@ -12,5 +12,5 @@
   "// rotate # degrees clockwise",
   "// wait # seconds",
   "// align with april tag #",
-  "// find id # and line up with it"
+  "// align with april tag # and go to it"
 ]
