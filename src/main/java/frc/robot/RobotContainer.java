@@ -483,19 +483,23 @@ public class RobotContainer {
     SlewRateLimiter vxLimiter = new SlewRateLimiter(AutoConstants.kLineUpTranslationSlewMpsPerSec);
     SlewRateLimiter vyLimiter = new SlewRateLimiter(AutoConstants.kLineUpTranslationSlewMpsPerSec);
     SlewRateLimiter rotationLimiter = new SlewRateLimiter(AutoConstants.kLineUpRotationSlewRadPerSecSquared);
-    // The limiters above need SOME starting baseline, but resetting to 0 makes the very first
-    // command of the whole step ramp up from a stall instead of starting at full speed - whether
-    // that first command comes from the search, the approach aim, or (if a tag's already in view
-    // when the step starts) the squaring/centering correction. Priming them to the first loop's
-    // actual numbers - whichever branch computes them - avoids that, while still smoothing every
-    // change after that.
-    boolean[] limitersPrimed = {false};
+    // Rotation needs SOME starting baseline, but resetting to 0 makes the very first command of
+    // the whole step ramp up from a stall instead of starting at full speed - whether that first
+    // command comes from the search, the approach aim, or (if a tag's already in view when the
+    // step starts) the squaring correction. Priming it to the first loop's actual number avoids
+    // that, while still smoothing every change after that. vx/vy deliberately do NOT get this
+    // treatment - unlike rotation, a slow start there is exactly the point (see
+    // kLineUpTranslationSlewMpsPerSec below): ramping translation up from a dead stop is what
+    // keeps the wheels from breaking traction and spinning when the approach starts.
+    boolean[] rotationLimiterPrimed = {false};
 
     return Commands.sequence(
         Commands.runOnce(() -> {
             m_alignRotationController.reset();
             search.reset(drivetrain.getState().Pose.getRotation());
-            limitersPrimed[0] = false;
+            vxLimiter.reset(0);
+            vyLimiter.reset(0);
+            rotationLimiterPrimed[0] = false;
         }, drivetrain),
         Commands.run(() -> {
             var target = vision.getTargetById(tagId);
@@ -564,11 +568,9 @@ public class RobotContainer {
                 vy = 0.0;
             }
 
-            if (!limitersPrimed[0]) {
-                vxLimiter.reset(vx);
-                vyLimiter.reset(vy);
+            if (!rotationLimiterPrimed[0]) {
                 rotationLimiter.reset(rotationalRate);
-                limitersPrimed[0] = true;
+                rotationLimiterPrimed[0] = true;
             }
             drivetrain.setControl(autoDrive.withVelocityX(vxLimiter.calculate(vx))
                 .withVelocityY(vyLimiter.calculate(vy))
