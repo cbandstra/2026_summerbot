@@ -57,8 +57,9 @@ public final class Constants {
     public static final String kCameraName = "OV9281_April_Tags";
 
     // PID gains for turning to face the best-seen AprilTag (target lock). Tune kP first; only
-    // add kD if it oscillates before settling.
-    public static final double kAlignRotationKP = 0.06;
+    // add kD if it oscillates before settling. Separate from the search-spin speeds below - only
+    // affects rotation while actively aiming at a tag that's already in view.
+    public static final double kAlignRotationKP = 0.04;
     public static final double kAlignRotationKI = 0.0;
     public static final double kAlignRotationKD = 0.0;
 
