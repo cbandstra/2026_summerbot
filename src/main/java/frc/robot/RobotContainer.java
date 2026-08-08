@@ -480,14 +480,19 @@ public class RobotContainer {
     SlewRateLimiter vxLimiter = new SlewRateLimiter(AutoConstants.kLineUpTranslationSlewMpsPerSec);
     SlewRateLimiter vyLimiter = new SlewRateLimiter(AutoConstants.kLineUpTranslationSlewMpsPerSec);
     SlewRateLimiter rotationLimiter = new SlewRateLimiter(AutoConstants.kLineUpRotationSlewRadPerSecSquared);
+    // The limiters above need SOME starting baseline, but resetting to 0 makes the very first
+    // command of the whole step ramp up from a stall instead of starting at full speed - whether
+    // that first command comes from the search, the approach aim, or (if a tag's already in view
+    // when the step starts) the squaring/centering correction. Priming them to the first loop's
+    // actual numbers - whichever branch computes them - avoids that, while still smoothing every
+    // change after that.
+    boolean[] limitersPrimed = {false};
 
     return Commands.sequence(
         Commands.runOnce(() -> {
             m_alignRotationController.reset();
             search.reset(drivetrain.getState().Pose.getRotation());
-            vxLimiter.reset(0);
-            vyLimiter.reset(0);
-            rotationLimiter.reset(0);
+            limitersPrimed[0] = false;
         }, drivetrain),
         Commands.run(() -> {
             var target = vision.getTargetById(tagId);
@@ -524,7 +529,13 @@ public class RobotContainer {
                 if (stillTooFar) {
                     // Still approaching - aim at the tag's center like a normal approach, and
                     // nudge sideways toward square so there's less left to fix once stopped.
-                    rotationalRate = computeAlignRotationalRate(rawYawDegrees, vision.getTargetTimestampSeconds());
+                    // Re-clamped tighter than the usual full turn speed - a big initial yaw error
+                    // right after search finds the tag could otherwise spin fast enough to lose
+                    // it again before it can even start correcting.
+                    rotationalRate = MathUtil.clamp(
+                        computeAlignRotationalRate(rawYawDegrees, vision.getTargetTimestampSeconds()),
+                        -AutoConstants.kLineUpFarAimMaxAngularRateRadPerSec,
+                        AutoConstants.kLineUpFarAimMaxAngularRateRadPerSec);
                     boolean zAngleOutOfTolerance = Math.abs(zAngleErrorDegrees)
                         > AutoConstants.kLineUpCenteredZAngleToleranceDegrees;
                     vy = flooredAndClamped(AutoConstants.kLineUpStrafeKP * zAngleErrorDegrees,
@@ -548,6 +559,13 @@ public class RobotContainer {
                 rotationalRate = search.pulse(drivetrain.getState().Pose.getRotation());
                 vx = 0.0;
                 vy = 0.0;
+            }
+
+            if (!limitersPrimed[0]) {
+                vxLimiter.reset(vx);
+                vyLimiter.reset(vy);
+                rotationLimiter.reset(rotationalRate);
+                limitersPrimed[0] = true;
             }
             drivetrain.setControl(autoDrive.withVelocityX(vxLimiter.calculate(vx))
                 .withVelocityY(vyLimiter.calculate(vy))

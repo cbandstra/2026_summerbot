@@ -28,7 +28,8 @@ public final class AutoScript {
       "drive\\s+(forward|backward|left|right)\\s+(\\d+(?:\\.\\d+)?)\\s+(?:foot|feet)",
       Pattern.CASE_INSENSITIVE);
   private static final Pattern ROTATE = Pattern.compile(
-      "rotate\\s+(?:(left|right)\\s+)?(-?\\d+(?:\\.\\d+)?)\\s+(?:degree|degrees)",
+      "rotate\\s+(?:(left|right|clockwise|counterclockwise)\\s+)?(-?\\d+(?:\\.\\d+)?)\\s+(?:degree|degrees)"
+          + "(?:\\s+(clockwise|counterclockwise))?",
       Pattern.CASE_INSENSITIVE);
   private static final Pattern WAIT = Pattern.compile(
       "wait\\s+(\\d+(?:\\.\\d+)?)\\s+(?:second|seconds)",
@@ -91,10 +92,11 @@ public final class AutoScript {
     Matcher rotate = ROTATE.matcher(line);
     if (rotate.matches()) {
       double degrees = Double.parseDouble(rotate.group(2));
-      String word = rotate.group(1);
-      if ("left".equalsIgnoreCase(word)) {
+      // The direction word can come right after "rotate" or after "degrees" - whichever's there.
+      String word = rotate.group(1) != null ? rotate.group(1) : rotate.group(3);
+      if ("left".equalsIgnoreCase(word) || "counterclockwise".equalsIgnoreCase(word)) {
         degrees = Math.abs(degrees);
-      } else if ("right".equalsIgnoreCase(word)) {
+      } else if ("right".equalsIgnoreCase(word) || "clockwise".equalsIgnoreCase(word)) {
         degrees = -Math.abs(degrees);
       }
       return new AutoStep.Rotate(degrees);

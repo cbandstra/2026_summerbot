@@ -112,6 +112,14 @@ public final class Constants {
     public static final double kLineUpNearApproachSpeedMps = 0.5;
     public static final double kLineUpNearDistanceMeters = 2.0;
 
+    // While still far out, aiming at the tag's center normally allows up to the drivetrain's
+    // full turn speed (kMaxAngularRate) - but a big initial yaw error right after the search
+    // finds the tag can spin fast enough to outrun the camera and lose the tag again before it
+    // can even start correcting. Close-range squaring never has this problem since its errors
+    // are already small by the time it's driving, so it never gets close to the full turn speed
+    // anyway. This caps the far-range aim turn to roughly match that same gentler pace.
+    public static final double kLineUpFarAimMaxAngularRateRadPerSec = 2.0;
+
     // "Centered" (for finishing the step) is judged straight from the tag's own pose, not from
     // yaw-to-target: the tag's Z rotation (how squarely it's facing the camera) must be within
     // kLineUpCenteredZAngleToleranceDegrees of kLineUpCenteredZAngleTargetDegrees, and its Y
@@ -126,7 +134,7 @@ public final class Constants {
     public static final double kLineUpCenteredYTargetMeters = 0.054;
 
     public static final double kLineUpCenteredZAngleToleranceDegrees = 3.0;
-    public static final double kLineUpCenteredYToleranceMeters = 0.02;
+    public static final double kLineUpCenteredYToleranceMeters = 0.05;
 
     // How far off-center (degrees) is still "close enough to drive straight at it" while lining
     // up - the rotation PID keeps refining aim the whole approach, this just gates when it's safe

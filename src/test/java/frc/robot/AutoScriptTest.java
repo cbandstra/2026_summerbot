@@ -44,6 +44,21 @@ class AutoScriptTest {
   }
 
   @Test
+  void rotateWithClockwiseWordingBeforeOrAfter() {
+    var leadingCcw = (AutoStep.Rotate) AutoScript.parseLine("rotate counterclockwise 180 degrees");
+    assertEquals(180.0, leadingCcw.degrees(), 1e-9);
+
+    var trailingCcw = (AutoStep.Rotate) AutoScript.parseLine("rotate 180 degrees counterclockwise");
+    assertEquals(180.0, trailingCcw.degrees(), 1e-9);
+
+    var leadingCw = (AutoStep.Rotate) AutoScript.parseLine("rotate clockwise 45 degrees");
+    assertEquals(-45.0, leadingCw.degrees(), 1e-9);
+
+    var trailingCw = (AutoStep.Rotate) AutoScript.parseLine("rotate 45 degrees clockwise");
+    assertEquals(-45.0, trailingCw.degrees(), 1e-9);
+  }
+
+  @Test
   void waitInstruction() {
     var step = (AutoStep.Wait) AutoScript.parseLine("wait 1.5 seconds");
     assertEquals(1.5, step.seconds(), 1e-9);
