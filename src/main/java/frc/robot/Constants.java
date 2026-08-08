@@ -21,7 +21,7 @@ public final class Constants {
     // Button numbers (check the Driver Station's USB tab if these seem wrong).
     public static final int kThrustmasterTriggerButton = 1;
     public static final int kThrustmasterTargetLockButton = 2;
-    public static final int kThrustmasterRecenterButton = 4;
+    public static final int kThrustmasterRecenterButton = 8;
     public static final int kThrustmasterForceSpinButton = 3;
 
     // A press shorter than this toggles target lock on/off. A press this long or longer acts
