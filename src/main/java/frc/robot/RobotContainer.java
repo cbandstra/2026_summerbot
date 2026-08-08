@@ -447,11 +447,15 @@ public class RobotContainer {
   private Command alignToTagCommand(int tagId) {
     double[] lastYawErrorDegrees = {Double.MAX_VALUE};
     PulsedSearch search = new PulsedSearch();
+    Timer stepTimer = new Timer();
+    boolean[] loggedSearching = {false};
 
     return Commands.sequence(
         Commands.runOnce(() -> {
             m_alignRotationController.reset();
             search.reset(drivetrain.getState().Pose.getRotation());
+            stepTimer.restart();
+            loggedSearching[0] = false;
         }, drivetrain),
         Commands.run(() -> {
             var target = vision.getTargetById(tagId);
@@ -460,7 +464,16 @@ public class RobotContainer {
                 double rawYawDegrees = target.get().getYaw();
                 lastYawErrorDegrees[0] = computeCompensatedYawDegrees(rawYawDegrees, vision.getTargetTimestampSeconds());
                 rotationalRate = computeAlignRotationalRate(rawYawDegrees, vision.getTargetTimestampSeconds());
+            } else if (!stepTimer.hasElapsed(AutoConstants.kAutoSearchInitialGraceSeconds)) {
+                // Might just be a not-yet-reported frame, not an actually-missing tag - hold
+                // still instead of immediately spinning off to search for it.
+                lastYawErrorDegrees[0] = Double.MAX_VALUE;
+                rotationalRate = 0.0;
             } else {
+                if (!loggedSearching[0]) {
+                    RobotLog.log("align with april tag " + tagId + ": grace period elapsed, searching");
+                    loggedSearching[0] = true;
+                }
                 lastYawErrorDegrees[0] = Double.MAX_VALUE;
                 rotationalRate = search.pulse(drivetrain.getState().Pose.getRotation());
             }
@@ -486,6 +499,7 @@ public class RobotContainer {
     double[] tagZAngleDegrees = {Double.MAX_VALUE};
     double[] cameraToTagYMeters = {Double.MAX_VALUE};
     PulsedSearch search = new PulsedSearch();
+    Timer stepTimer = new Timer();
     // Smooths the commanded speeds so they ramp instead of jumping instantly - a noisy vision
     // reading (or the strafe floor snapping on/off) would otherwise show up as a sudden jerk.
     // Same idea as the driver stick's smoothing (m_xLimiter etc.), just for this command.
@@ -501,6 +515,7 @@ public class RobotContainer {
     // kLineUpTranslationSlewMpsPerSec below): ramping translation up from a dead stop is what
     // keeps the wheels from breaking traction and spinning when the approach starts.
     boolean[] rotationLimiterPrimed = {false};
+    boolean[] loggedSearching = {false};
 
     return Commands.sequence(
         Commands.runOnce(() -> {
@@ -509,6 +524,8 @@ public class RobotContainer {
             vxLimiter.reset(0);
             vyLimiter.reset(0);
             rotationLimiterPrimed[0] = false;
+            stepTimer.restart();
+            loggedSearching[0] = false;
         }, drivetrain),
         Commands.run(() -> {
             var target = vision.getTargetById(tagId);
@@ -567,7 +584,21 @@ public class RobotContainer {
                     vy = flooredAndClamped(AutoConstants.kLineUpCenterStrafeKP * yErrorMeters,
                         yOutOfTolerance, AutoConstants.kLineUpStrafeMinMps, AutoConstants.kLineUpCloseStrafeMaxMps);
                 }
+            } else if (!stepTimer.hasElapsed(AutoConstants.kAutoSearchInitialGraceSeconds)) {
+                // Might just be a not-yet-reported frame, not an actually-missing tag - hold
+                // still instead of immediately spinning off to search for it.
+                yawErrorDegrees[0] = Double.MAX_VALUE;
+                distanceMeters[0] = Double.MAX_VALUE;
+                tagZAngleDegrees[0] = Double.MAX_VALUE;
+                cameraToTagYMeters[0] = Double.MAX_VALUE;
+                rotationalRate = 0.0;
+                vx = 0.0;
+                vy = 0.0;
             } else {
+                if (!loggedSearching[0]) {
+                    RobotLog.log("align with april tag " + tagId + " and go to it: grace period elapsed, searching");
+                    loggedSearching[0] = true;
+                }
                 yawErrorDegrees[0] = Double.MAX_VALUE;
                 distanceMeters[0] = Double.MAX_VALUE;
                 tagZAngleDegrees[0] = Double.MAX_VALUE;

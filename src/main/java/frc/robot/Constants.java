@@ -101,6 +101,13 @@ public final class Constants {
     public static final double kStepCompleteBeepNoteSeconds = 0.15;
     public static final double kStepCompleteBeepSeconds = 0.5;
 
+    // "Align with april tag" and "align with april tag ... and go to it" hold still (instead of
+    // immediately spinning to search) for this long at the very start, in case the tag is
+    // already in view but the camera just hasn't reported this frame's detection yet (e.g. right
+    // as a preceding rotate step finishes) - avoids a needless spin burst before vision catches
+    // up on something that was already there.
+    public static final double kAutoSearchInitialGraceSeconds = 0.5;
+
     // Yaw error (degrees) within which "align with april tag" counts as done.
     public static final double kAutoAlignToleranceDegrees = 1.5;
 

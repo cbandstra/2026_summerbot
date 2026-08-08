@@ -2,6 +2,9 @@ package frc.robot.subsystems;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.stream.Collectors;
 
 import org.photonvision.PhotonCamera;
 import org.photonvision.targeting.PhotonTrackedTarget;
@@ -18,8 +21,10 @@ public class Vision extends SubsystemBase {
   private double bestTargetTimestampSeconds = 0.0;
   private List<PhotonTrackedTarget> currentTargets = List.of();
 
-  // -1 means no target. Tracked so we only log when a tag comes in/out of view, not every loop.
-  private int loggedTargetId = -1;
+  // So we only log when the set of visible tag IDs actually changes, not every loop. Logs every
+  // ID currently in view (not just PhotonVision's single "best" pick) so it's possible to tell
+  // whether a specific tag ID is actually visible, not just "some" tag.
+  private Set<Integer> loggedVisibleIds = Set.of();
 
   @Override
   public void periodic() {
@@ -31,15 +36,12 @@ public class Vision extends SubsystemBase {
       }
     }
 
-    int currentId = bestTarget.map(PhotonTrackedTarget::getFiducialId).orElse(-1);
-    if (currentId != loggedTargetId) {
-      if (loggedTargetId != -1) {
-        RobotLog.log("April Tag out of view: ID " + loggedTargetId);
-      }
-      if (currentId != -1) {
-        RobotLog.log("April Tag in view: ID " + currentId);
-      }
-      loggedTargetId = currentId;
+    Set<Integer> visibleIds = currentTargets.stream()
+        .map(PhotonTrackedTarget::getFiducialId)
+        .collect(Collectors.toCollection(TreeSet::new));
+    if (!visibleIds.equals(loggedVisibleIds)) {
+      RobotLog.log("April Tags in view: " + (visibleIds.isEmpty() ? "none" : visibleIds));
+      loggedVisibleIds = visibleIds;
     }
   }
 
