@@ -27,7 +27,8 @@ regardless of which way the robot is facing.
 |---|---|---|
 | 1 | Trigger | **Hold** — lock the wheels in an X pattern (brake; resists being pushed). |
 | 2 | Target lock | **Tap** (under 1 second) to toggle on/off — spins in place looking for any AprilTag, then auto-align rotation to it once seen, hands-free until tapped again. **Hold** it instead to activate the same behavior only while held, exactly like a plain hold button — always ends off on release, even if it was already toggled on. You still steer translation with the stick either way; only rotation is taken over. Logs "Looking for April tags" while searching. Turns off automatically if the robot is disabled. |
-| 3, 4 | — | Unbound. |
+| 3 | Recenter | **Press** — makes wherever the robot is currently facing the new "forward" for field-centric driving. Doesn't move the robot or change its tracked field position, just which way the stick's forward points from now on. Useful if the robot was hand-placed at an angle, or you want to redefine forward mid-match. |
+| 4 | — | Unbound. |
 
 ### Autonomous
 

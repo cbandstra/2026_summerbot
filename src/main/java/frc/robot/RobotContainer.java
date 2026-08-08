@@ -134,6 +134,13 @@ public class RobotContainer {
     m_driverController.button(OperatorConstants.kThrustmasterTriggerButton)
         .whileTrue(drivetrain.applyRequest(() -> brake));
 
+    // Press to make wherever the robot is CURRENTLY facing the new "forward" for field-centric
+    // driving - useful after the robot's hand-placed at an angle, or to redefine forward
+    // mid-match. Doesn't move the robot or touch its tracked field position, just which way the
+    // stick's "forward" points from now on.
+    m_driverController.button(OperatorConstants.kThrustmasterRecenterButton)
+        .onTrue(Commands.runOnce(drivetrain::seedFieldCentric, drivetrain));
+
     // Target lock: spin looking for any AprilTag, then turn to face it once seen. Translation
     // stays on the stick the whole time - only rotation is taken over.
     //
@@ -276,7 +283,14 @@ public class RobotContainer {
     double outputSpeed = outputFraction * maxSpeed;
     double unitX = stickX / stickMagnitude;
     double unitY = stickY / stickMagnitude;
-    return new double[] {unitX * outputSpeed, unitY * outputSpeed};
+
+    // Negated (both axes): same chassis-mounting inversion confirmed for the autonomous
+    // RobotCentric drive (see driveStepCommand) - this rig's kinematic "front" is physically its
+    // back, so +velocityX/+velocityY here also drive backward/right instead of forward/left.
+    // Negating both axes is the same thing as rotating the whole output 180 degrees. Confirmed
+    // on the robot via the recenter button: after seeding a known forward direction, driving
+    // "forward" went the opposite way.
+    return new double[] {-unitX * outputSpeed, -unitY * outputSpeed};
   }
 
   /** Turns an AutoStep into a runnable Command using the robot's own subsystems. */
