@@ -86,7 +86,7 @@ public final class Constants {
 
   public static class AutoConstants {
     // Speed used for every scripted "drive" step. Slow on purpose for testing.
-    public static final double kAutoDriveSpeedMps = 0.3;
+    public static final double kAutoDriveSpeedMps = 1.0;
 
     // Spin rate (rad/s) used for every scripted "rotate" step.
     public static final double kAutoRotateSpeedRadPerSec = 1.0;
@@ -104,6 +104,14 @@ public final class Constants {
     // How close (meters) to kLineUpDistanceMeters counts as "close enough" to finish the step.
     public static final double kLineUpDistanceToleranceMeters = 0.1;
 
+    // The approach speed isn't one constant - it's fast (kLineUpFarApproachSpeedMps) until
+    // within kLineUpNearDistanceMeters of the tag, then slows to kLineUpNearApproachSpeedMps for
+    // the final approach so it doesn't come in too hot to fine-tune its alignment. Independent of
+    // kAutoDriveSpeedMps, which is used by the plain drive/align steps instead.
+    public static final double kLineUpFarApproachSpeedMps = 1.5;
+    public static final double kLineUpNearApproachSpeedMps = 0.5;
+    public static final double kLineUpNearDistanceMeters = 2.0;
+
     // "Centered" (for finishing the step) is judged straight from the tag's own pose, not from
     // yaw-to-target: the tag's Z rotation (how squarely it's facing the camera) must be within
     // kLineUpCenteredZAngleToleranceDegrees of kLineUpCenteredZAngleTargetDegrees, and its Y
@@ -117,8 +125,8 @@ public final class Constants {
     public static final double kLineUpCenteredZAngleTargetDegrees = -176.0;
     public static final double kLineUpCenteredYTargetMeters = 0.054;
 
-    public static final double kLineUpCenteredZAngleToleranceDegrees = 1.0;
-    public static final double kLineUpCenteredYToleranceMeters = 0.01;
+    public static final double kLineUpCenteredZAngleToleranceDegrees = 3.0;
+    public static final double kLineUpCenteredYToleranceMeters = 0.02;
 
     // How far off-center (degrees) is still "close enough to drive straight at it" while lining
     // up - the rotation PID keeps refining aim the whole approach, this just gates when it's safe
@@ -128,20 +136,43 @@ public final class Constants {
     // How long "find id <n> and line up with it" searches/drives before giving up, so a missing
     // tag can't stall the rest of the autonomous sequence forever. Longer than a plain align
     // since it also has to drive up to the tag afterward.
-    public static final double kLineUpTimeoutSeconds = 10.0;
+    public static final double kLineUpTimeoutSeconds = 20.0;
 
-    // Driving straight at the tag with only rotation correction doesn't actually square the
-    // robot up with it - the Z angle just ends up whatever the approach geometry happens to
-    // produce. This strafes sideways too, proportional to how far the Z angle is from 180
-    // (dead-on), so the robot can actively walk itself square instead of hoping it lands there.
-    // Confirmed correct direction on the robot 2026-08-08.
+    // While still driving up to the tag, keep pointing at its center like a normal approach,
+    // but also nudge sideways toward square (proportional to how far the Z angle is from
+    // kLineUpCenteredZAngleTargetDegrees) so there's less left to fix once it stops. This alone
+    // can't fully square the robot up - see kLineUpSquareKP below for why - it's just a head
+    // start. Confirmed correct direction on the robot 2026-08-08.
     public static final double kLineUpStrafeKP = 0.006;
 
-    // Once the robot's already at kLineUpDistanceMeters and has stopped driving forward, it's
-    // not fighting forward motion anymore, so strafing can be a lot more aggressive to finish
-    // centering quickly - higher gain and a higher speed cap than the gentler in-transit strafe
-    // above.
-    public static final double kLineUpStrafeKPCloseUp = 0.03;
+    // Once the robot's stopped at kLineUpDistanceMeters, squaring up is a rotation problem - the
+    // Z angle is purely a function of heading relative to the tag's face, not position, so
+    // sliding sideways without turning can't change it. (The old approach only worked
+    // indirectly: strafing shifted bearing, which the gentle bearing PID reacted to by rotating,
+    // which incidentally changed Z angle too - roundabout and weak.) This instead rotates
+    // straight at the Z-angle error (rad/s per degree), same as a normal turn-in-place. Confirmed
+    // correct direction on the robot 2026-08-08.
+    public static final double kLineUpSquareKP = 0.05;
+
+    // Once stopped, centering is a translation problem, corrected directly the same way (m/s per
+    // meter of Y error) instead of relying on it falling out of the rotation correction above.
+    // Confirmed correct direction on the robot 2026-08-08 (was inverted before - flip it back if
+    // it starts strafing away from center again).
+    public static final double kLineUpCenterStrafeKP = -3.0;
+
+    // Cap (m/s) for the close-up centering strafe above.
     public static final double kLineUpCloseStrafeMaxMps = 0.4;
+
+    // A small error times a gentle gain can come out too small to actually move the robot at all
+    // (motor/gearbox static friction). Whenever a strafe correction is needed (Z angle out of
+    // tolerance while still driving up, or Y out of tolerance once stopped), it's floored to at
+    // least this speed (direction still comes from the gain math) so it's never a no-op.
+    public static final double kLineUpStrafeMinMps = 0.08;
+
+    // Caps how fast the commanded speeds are allowed to change (per second) during "find id <n>
+    // and line up with it" - smooths out noisy vision readings and the strafe floor snapping
+    // on/off, which otherwise show up as jerky, jumpy motion instead of a smooth correction.
+    public static final double kLineUpTranslationSlewMpsPerSec = 1.5;
+    public static final double kLineUpRotationSlewRadPerSecSquared = 6.0;
   }
 }

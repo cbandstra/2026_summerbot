@@ -474,11 +474,20 @@ public class RobotContainer {
     double[] tagZAngleDegrees = {Double.MAX_VALUE};
     double[] cameraToTagYMeters = {Double.MAX_VALUE};
     PulsedSearch search = new PulsedSearch();
+    // Smooths the commanded speeds so they ramp instead of jumping instantly - a noisy vision
+    // reading (or the strafe floor snapping on/off) would otherwise show up as a sudden jerk.
+    // Same idea as the driver stick's smoothing (m_xLimiter etc.), just for this command.
+    SlewRateLimiter vxLimiter = new SlewRateLimiter(AutoConstants.kLineUpTranslationSlewMpsPerSec);
+    SlewRateLimiter vyLimiter = new SlewRateLimiter(AutoConstants.kLineUpTranslationSlewMpsPerSec);
+    SlewRateLimiter rotationLimiter = new SlewRateLimiter(AutoConstants.kLineUpRotationSlewRadPerSecSquared);
 
     return Commands.sequence(
         Commands.runOnce(() -> {
             m_alignRotationController.reset();
             search.reset(drivetrain.getState().Pose.getRotation());
+            vxLimiter.reset(0);
+            vyLimiter.reset(0);
+            rotationLimiter.reset(0);
         }, drivetrain),
         Commands.run(() -> {
             var target = vision.getTargetById(tagId);
@@ -488,33 +497,49 @@ public class RobotContainer {
             if (target.isPresent()) {
                 double rawYawDegrees = target.get().getYaw();
                 yawErrorDegrees[0] = computeCompensatedYawDegrees(rawYawDegrees, vision.getTargetTimestampSeconds());
-                rotationalRate = computeAlignRotationalRate(rawYawDegrees, vision.getTargetTimestampSeconds());
                 distanceMeters[0] = vision.getTargetDistanceMeters();
 
                 var cameraToTarget = target.get().getBestCameraToTarget();
                 tagZAngleDegrees[0] = Math.toDegrees(cameraToTarget.getRotation().getZ());
                 cameraToTagYMeters[0] = cameraToTarget.getTranslation().getY();
 
+                double zAngleErrorDegrees = Rotation2d.fromDegrees(tagZAngleDegrees[0])
+                    .minus(Rotation2d.fromDegrees(AutoConstants.kLineUpCenteredZAngleTargetDegrees)).getDegrees();
+                double yErrorMeters = cameraToTagYMeters[0] - AutoConstants.kLineUpCenteredYTargetMeters;
+
                 boolean aimedWellEnoughToDrive =
                     Math.abs(yawErrorDegrees[0]) <= AutoConstants.kLineUpSteerToleranceDegrees;
                 boolean stillTooFar = distanceMeters[0] - AutoConstants.kLineUpDistanceMeters
                     > AutoConstants.kLineUpDistanceToleranceMeters;
+                // Fast while there's real ground to cover, slower once close so the final
+                // approach doesn't come in too hot to fine-tune alignment.
+                double approachSpeedMps = distanceMeters[0] <= AutoConstants.kLineUpNearDistanceMeters
+                    ? AutoConstants.kLineUpNearApproachSpeedMps
+                    : AutoConstants.kLineUpFarApproachSpeedMps;
                 // Negative = forward - same RobotCentric convention as driveStepCommand.
                 vx = (aimedWellEnoughToDrive && stillTooFar)
-                    ? -Math.min(AutoConstants.kAutoDriveSpeedMps, kMaxSpeedMps)
+                    ? -Math.min(approachSpeedMps, kMaxSpeedMps)
                     : 0.0;
 
-                double zAngleErrorDegrees = Rotation2d.fromDegrees(tagZAngleDegrees[0])
-                    .minus(Rotation2d.fromDegrees(AutoConstants.kLineUpCenteredZAngleTargetDegrees)).getDegrees();
-                // Once it's stopped driving forward, it's not fighting that motion anymore, so
-                // strafing can be more aggressive to finish centering quickly.
-                double strafeKP = stillTooFar
-                    ? AutoConstants.kLineUpStrafeKP
-                    : AutoConstants.kLineUpStrafeKPCloseUp;
-                double strafeMaxMps = stillTooFar
-                    ? AutoConstants.kAutoDriveSpeedMps
-                    : AutoConstants.kLineUpCloseStrafeMaxMps;
-                vy = MathUtil.clamp(strafeKP * zAngleErrorDegrees, -strafeMaxMps, strafeMaxMps);
+                if (stillTooFar) {
+                    // Still approaching - aim at the tag's center like a normal approach, and
+                    // nudge sideways toward square so there's less left to fix once stopped.
+                    rotationalRate = computeAlignRotationalRate(rawYawDegrees, vision.getTargetTimestampSeconds());
+                    boolean zAngleOutOfTolerance = Math.abs(zAngleErrorDegrees)
+                        > AutoConstants.kLineUpCenteredZAngleToleranceDegrees;
+                    vy = flooredAndClamped(AutoConstants.kLineUpStrafeKP * zAngleErrorDegrees,
+                        zAngleOutOfTolerance, AutoConstants.kLineUpStrafeMinMps, approachSpeedMps);
+                } else {
+                    // Stopped driving forward - squaring up is a rotation problem, and centering
+                    // is a translation problem, so correct each directly instead of only aiming
+                    // at the tag's center and hoping strafing fixes the skew as a side effect.
+                    rotationalRate = MathUtil.clamp(AutoConstants.kLineUpSquareKP * zAngleErrorDegrees,
+                        -kMaxAngularRate, kMaxAngularRate);
+                    boolean yOutOfTolerance = Math.abs(yErrorMeters)
+                        > AutoConstants.kLineUpCenteredYToleranceMeters;
+                    vy = flooredAndClamped(AutoConstants.kLineUpCenterStrafeKP * yErrorMeters,
+                        yOutOfTolerance, AutoConstants.kLineUpStrafeMinMps, AutoConstants.kLineUpCloseStrafeMaxMps);
+                }
             } else {
                 yawErrorDegrees[0] = Double.MAX_VALUE;
                 distanceMeters[0] = Double.MAX_VALUE;
@@ -524,7 +549,9 @@ public class RobotContainer {
                 vx = 0.0;
                 vy = 0.0;
             }
-            drivetrain.setControl(autoDrive.withVelocityX(vx).withVelocityY(vy).withRotationalRate(rotationalRate));
+            drivetrain.setControl(autoDrive.withVelocityX(vxLimiter.calculate(vx))
+                .withVelocityY(vyLimiter.calculate(vy))
+                .withRotationalRate(rotationLimiter.calculate(rotationalRate)));
         }, drivetrain, vision)
             .until(() -> isCentered(tagZAngleDegrees[0], cameraToTagYMeters[0])
                 && Math.abs(distanceMeters[0] - AutoConstants.kLineUpDistanceMeters)
@@ -533,6 +560,21 @@ public class RobotContainer {
         Commands.runOnce(() -> drivetrain.setControl(
             autoDrive.withVelocityX(0).withVelocityY(0).withRotationalRate(0)), drivetrain)
     );
+  }
+
+  /**
+   * {@code gainTimesError}, but with its magnitude floored to {@code minMps} whenever {@code
+   * outOfTolerance} is true (so a small error times a gentle gain can't come out too small to
+   * actually move the robot) and capped to {@code maxMps}. Direction always comes from {@code
+   * gainTimesError}'s sign.
+   */
+  private static double flooredAndClamped(double gainTimesError, boolean outOfTolerance, double minMps, double maxMps) {
+    double magnitude = Math.abs(gainTimesError);
+    if (outOfTolerance && magnitude < minMps) {
+        magnitude = minMps;
+    }
+    magnitude = Math.min(magnitude, maxMps);
+    return Math.copySign(magnitude, gainTimesError);
   }
 
   /**
