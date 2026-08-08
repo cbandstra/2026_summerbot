@@ -26,9 +26,8 @@ regardless of which way the robot is facing.
 | Button | Name | Behavior |
 |---|---|---|
 | 1 | Trigger | **Hold** — lock the wheels in an X pattern (brake; resists being pushed). |
-| 2 | Thumb | **Hold** — spin in place looking for any AprilTag, then auto-align rotation to it once seen. You still steer translation with the stick; only rotation is taken over. Logs "Looking for April tags" while searching. |
-| 3 | — | Unbound (this align behavior used to live here). |
-| 4 | — | Unbound. |
+| 2 | Target lock | **Tap** (under 1 second) to toggle on/off — spins in place looking for any AprilTag, then auto-align rotation to it once seen, hands-free until tapped again. **Hold** it instead to activate the same behavior only while held, exactly like a plain hold button — always ends off on release, even if it was already toggled on. You still steer translation with the stick either way; only rotation is taken over. Logs "Looking for April tags" while searching. Turns off automatically if the robot is disabled. |
+| 3, 4 | — | Unbound. |
 
 ### Autonomous
 

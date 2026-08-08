@@ -20,7 +20,12 @@ public final class Constants {
 
     // Button numbers (check the Driver Station's USB tab if these seem wrong).
     public static final int kThrustmasterTriggerButton = 1;
-    public static final int kThrustmasterThumbButton = 2;
+    public static final int kThrustmasterTargetLockButton = 2;
+
+    // A press shorter than this toggles target lock on/off. A press this long or longer acts
+    // like plain hold-to-activate instead, and always ends off on release (even if it was
+    // already toggled on) - so holding "just in case you forgot" never leaves it stuck on.
+    public static final double kTargetLockTapThresholdSeconds = 1.0;
 
     // Stick deflection below this fraction produces zero output.
     public static final double kTranslationDeadband = 0.10;
@@ -49,13 +54,13 @@ public final class Constants {
     // Must match the camera's name in the PhotonVision UI.
     public static final String kCameraName = "OV9281_April_Tags";
 
-    // PID gains for turning to face the best-seen AprilTag (button 2). Tune kP first; only add
-    // kD if it oscillates before settling.
+    // PID gains for turning to face the best-seen AprilTag (target lock). Tune kP first; only
+    // add kD if it oscillates before settling.
     public static final double kAlignRotationKP = 0.06;
     public static final double kAlignRotationKI = 0.0;
     public static final double kAlignRotationKD = 0.0;
 
-    // How fast (rad/s) to spin while searching for a tag with button 2. Kept slow on purpose.
+    // How fast (rad/s) to spin while searching for a tag during target lock. Kept slow on purpose.
     public static final double kSearchRotationRadPerSec = 1.0;
   }
 

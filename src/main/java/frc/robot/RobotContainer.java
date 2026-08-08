@@ -17,10 +17,12 @@ import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.math.filter.SlewRateLimiter;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
+import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.button.CommandJoystick;
 import edu.wpi.first.wpilibj2.command.button.RobotModeTriggers;
+import edu.wpi.first.wpilibj2.command.button.Trigger;
 
 import frc.robot.Constants.AutoConstants;
 import frc.robot.Constants.OperatorConstants;
@@ -54,7 +56,7 @@ public class RobotContainer {
   // shows up in the console right away instead of hiding until autonomous actually starts.
   private final List<AutoStep> m_autoSteps = AutoScript.load();
 
-  // Turns the robot to face an AprilTag - shared by button 2 and the "align with april tag"
+  // Turns the robot to face an AprilTag - shared by target lock and the "align with april tag"
   // autonomous instruction. Input/output: yaw error in degrees, rad/s out.
   private final PIDController m_alignRotationController = new PIDController(
       VisionConstants.kAlignRotationKP,
@@ -64,6 +66,14 @@ public class RobotContainer {
 
   // So "Looking for April tags" only logs once per search, not every loop.
   private boolean m_loggedSearching = false;
+
+  // How long the target lock button has been held this press - used to tell a quick tap
+  // (toggle on/off) from a hold (plain hold-to-activate) on release.
+  private final Timer m_targetLockPressTimer = new Timer();
+
+  // True while target lock is toggled on. Target lock is active whenever this is true OR the
+  // button is physically held (see configureBindings).
+  private boolean m_targetLockToggleOn = false;
 
   // Thrustmaster T.16000M flight stick
   private final CommandJoystick m_driverController =
@@ -107,19 +117,46 @@ public class RobotContainer {
         })
     );
 
-    // Idle (don't fight the brakes) while disabled.
+    // Idle (don't fight the brakes) while disabled. Also force target lock's toggle off, so it
+    // can't silently resume searching/aligning the instant the robot is re-enabled.
     final var idle = new SwerveRequest.Idle();
     RobotModeTriggers.disabled().whileTrue(
         drivetrain.applyRequest(() -> idle).ignoringDisable(true)
     );
+    RobotModeTriggers.disabled().onTrue(Commands.runOnce(() -> {
+        if (m_targetLockToggleOn) {
+            m_targetLockToggleOn = false;
+            RobotLog.log("Target lock: OFF (robot disabled)");
+        }
+    }));
 
     // Hold the trigger to lock the wheels in an X pattern (resists being pushed).
     m_driverController.button(OperatorConstants.kThrustmasterTriggerButton)
         .whileTrue(drivetrain.applyRequest(() -> brake));
 
-    // Hold button 2: spin looking for any AprilTag, then turn to face it once seen. Translation
+    // Target lock: spin looking for any AprilTag, then turn to face it once seen. Translation
     // stays on the stick the whole time - only rotation is taken over.
-    m_driverController.button(OperatorConstants.kThrustmasterThumbButton).whileTrue(
+    //
+    // A quick tap (shorter than kTargetLockTapThresholdSeconds) toggles it on/off, so it keeps
+    // running hands-free until tapped again. Holding it down works exactly like before - active
+    // the whole time it's held, and always ends off on release - in case you forget the toggle
+    // and just want to hold it like usual.
+    Trigger targetLockButton = m_driverController.button(OperatorConstants.kThrustmasterTargetLockButton);
+
+    targetLockButton.onTrue(Commands.runOnce(m_targetLockPressTimer::restart));
+    targetLockButton.onFalse(Commands.runOnce(() -> {
+        double heldSeconds = m_targetLockPressTimer.get();
+        if (heldSeconds < OperatorConstants.kTargetLockTapThresholdSeconds) {
+            m_targetLockToggleOn = !m_targetLockToggleOn;
+            RobotLog.log("Target lock: " + (m_targetLockToggleOn ? "ON" : "OFF")
+                + String.format(" (tap, %.2fs)", heldSeconds));
+        } else {
+            m_targetLockToggleOn = false;
+            RobotLog.log(String.format("Target lock: OFF (held %.2fs)", heldSeconds));
+        }
+    }));
+
+    new Trigger(() -> targetLockButton.getAsBoolean() || m_targetLockToggleOn).whileTrue(
         Commands.startRun(
             () -> {
                 m_alignRotationController.reset();
