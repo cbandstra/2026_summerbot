@@ -19,7 +19,12 @@ order, not guaranteed on every setup.
 | Throttle slider | Slider (3) | Sets top translation speed live — **all the way back = fastest, all the way forward = slowest/safest** |
 
 Driving is **field-centric**: forward on the stick always drives away from the driver station
-regardless of which way the robot is facing.
+regardless of which way the robot is facing. This relies on the robot knowing which way is
+"forward" in the first place — the very first time the robot is enabled after powering on, it
+automatically treats whatever direction it's currently facing as forward, so make sure it's
+pointed away from the driver station before that first enable. Use the Recenter button
+(below) any time after that to redefine forward again, e.g. after it's been hand-placed at
+an angle.
 
 ### Buttons
 

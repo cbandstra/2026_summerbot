@@ -79,6 +79,14 @@ public class RobotContainer {
   // button is physically held (see configureBindings).
   private boolean m_targetLockToggleOn = false;
 
+  // True until the robot's been enabled once since power-on. The gyro zeroes itself to whichever
+  // way the robot happens to be pointed when the roboRIO boots - if that's not facing away from
+  // the driver station (e.g. it booted on a cart or the pit table), "forward" on the stick drives
+  // the wrong way until someone fixes it with the Recenter button. Auto-seeding on the first
+  // enable fixes it automatically instead, since by then the robot's actually been placed for
+  // driving.
+  private boolean m_needsInitialFieldCentricSeed = true;
+
   // Thrustmaster T.16000M flight stick
   private final CommandJoystick m_driverController =
       new CommandJoystick(OperatorConstants.kDriverControllerPort);
@@ -131,6 +139,16 @@ public class RobotContainer {
         if (m_targetLockToggleOn) {
             m_targetLockToggleOn = false;
             RobotLog.log("Target lock: OFF (robot disabled)");
+        }
+    }));
+
+    // First time the robot's enabled after booting, treat wherever it's currently facing as
+    // "forward" - see m_needsInitialFieldCentricSeed above for why.
+    RobotModeTriggers.disabled().onFalse(Commands.runOnce(() -> {
+        if (m_needsInitialFieldCentricSeed) {
+            drivetrain.seedFieldCentric();
+            m_needsInitialFieldCentricSeed = false;
+            RobotLog.log("Drivetrain: seeded forward direction on first enable");
         }
     }));
 
