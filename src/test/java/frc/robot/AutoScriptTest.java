@@ -26,6 +26,24 @@ class AutoScriptTest {
   }
 
   @Test
+  void driveTowardTarget() {
+    var step = (AutoStep.DriveToward) AutoScript.parseLine("drive toward target 5 feet");
+    assertEquals(5 * 0.3048, step.distanceMeters(), 1e-9);
+
+    var pluralToward = (AutoStep.DriveToward) AutoScript.parseLine("drive towards target 1 foot");
+    assertEquals(1 * 0.3048, pluralToward.distanceMeters(), 1e-9);
+  }
+
+  @Test
+  void driveAwayFromTarget() {
+    var step = (AutoStep.DriveAway) AutoScript.parseLine("drive away from target 5 feet");
+    assertEquals(5 * 0.3048, step.distanceMeters(), 1e-9);
+
+    var singular = (AutoStep.DriveAway) AutoScript.parseLine("drive away from target 1 foot");
+    assertEquals(1 * 0.3048, singular.distanceMeters(), 1e-9);
+  }
+
+  @Test
   void rotateBareNumberIsSigned() {
     var positive = (AutoStep.Rotate) AutoScript.parseLine("rotate 90 degrees");
     assertEquals(90.0, positive.degrees(), 1e-9);

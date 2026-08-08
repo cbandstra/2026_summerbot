@@ -59,6 +59,8 @@ Example:
 | Instruction | Example | Notes |
 |---|---|---|
 | `drive <forward\|backward\|left\|right> <number> feet` | `drive forward 3 feet` | Distance is measured from odometry, not timed — accurate regardless of battery voltage or carpet friction. `foot`/`feet` both work. Direction is robot-relative (whichever way the robot is facing when the step starts), not field-relative. |
+| `drive toward target <number> feet` | `drive toward target 5 feet` | Drives forward (robot-relative, whichever way the robot's currently facing) at the same slower speed `align with april tag ... and go to it` uses once it's close to a tag, since this step is meant for that same close-range situation. Meant to follow a `rotate` step that aimed the robot roughly at a target: while any AprilTag is in view (not a specific ID - whichever one's currently seen) it corrects aim toward it as it drives, same as `align with april tag`'s rotation correction; once the tag goes out of view (e.g. too close for the camera to see the whole thing) it stops correcting and just keeps driving straight for the rest of the distance, rather than searching for it. `toward`/`towards` both work. |
+| `drive away from target <number> feet` | `drive away from target 5 feet` | Same as `drive toward target`, but backward — simply reverses the wheel direction rather than re-pointing them, same relationship as `drive backward` to `drive forward`. Still corrects aim toward whichever AprilTag is in view the whole time, even while backing away from it, using the same rules as `drive toward target` for when it stops correcting. |
 | `rotate <number> degrees` | `rotate 90 degrees` | Turns in place. A bare number is signed: positive = counterclockwise, negative = clockwise (matches the rest of the codebase's convention). You can instead say the direction explicitly, either before or after the number: `rotate left/right/clockwise/counterclockwise <number> degrees` or `rotate <number> degrees left/right/clockwise/counterclockwise`. `degree`/`degrees` both work. |
 | `wait <number> seconds` | `wait 1.5 seconds` | Just sits still. `second`/`seconds` both work. |
 | `align with april tag <number>` | `align with april tag #4` | Spins (in the same fast/slow pulse pattern as target lock) to search for that specific AprilTag ID, then turns to face it. Also accepts `align to april tag 4` (with or without the `#`). Gives up after a few seconds if the tag is never found, so a missing tag can't stall the rest of the script. |
@@ -73,7 +75,9 @@ rather than guessing at a typo and running a partial or wrong script.
 
 Each step beeps once it finishes, played through one of the drivetrain's own Kraken motors (no
 extra speaker hardware needed) — tone and duration are tunable via `kStepCompleteBeepHz`/
-`kStepCompleteBeepSeconds` in `AutoConstants`.
+`kStepCompleteBeepSeconds` in `AutoConstants`. Set `kStepCompleteBeepEnabled` to `false` there to
+skip the beep entirely (not just silence it) and speed up cycle times, since every step normally
+waits for its beep to fully finish before the next one starts.
 
 All the speeds/tolerances used above (drive speed, rotate speed, align tolerance, align timeout)
 are tunable in `AutoConstants` in [`Constants.java`](src/main/java/frc/robot/Constants.java) — the

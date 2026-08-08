@@ -27,6 +27,12 @@ public final class AutoScript {
   private static final Pattern DRIVE = Pattern.compile(
       "drive\\s+(forward|backward|left|right)\\s+(\\d+(?:\\.\\d+)?)\\s+(?:foot|feet)",
       Pattern.CASE_INSENSITIVE);
+  private static final Pattern DRIVE_TOWARD_TARGET = Pattern.compile(
+      "drive\\s+towards?\\s+target\\s+(\\d+(?:\\.\\d+)?)\\s+(?:foot|feet)",
+      Pattern.CASE_INSENSITIVE);
+  private static final Pattern DRIVE_AWAY_FROM_TARGET = Pattern.compile(
+      "drive\\s+away\\s+from\\s+target\\s+(\\d+(?:\\.\\d+)?)\\s+(?:foot|feet)",
+      Pattern.CASE_INSENSITIVE);
   private static final Pattern ROTATE = Pattern.compile(
       "rotate\\s+(?:(left|right|clockwise|counterclockwise)\\s+)?(-?\\d+(?:\\.\\d+)?)\\s+(?:degree|degrees)"
           + "(?:\\s+(clockwise|counterclockwise))?",
@@ -87,6 +93,18 @@ public final class AutoScript {
       AutoStep.Direction direction = AutoStep.Direction.valueOf(drive.group(1).toUpperCase());
       double feet = Double.parseDouble(drive.group(2));
       return new AutoStep.Drive(direction, feet * kFeetToMeters);
+    }
+
+    Matcher driveToward = DRIVE_TOWARD_TARGET.matcher(line);
+    if (driveToward.matches()) {
+      double feet = Double.parseDouble(driveToward.group(1));
+      return new AutoStep.DriveToward(feet * kFeetToMeters);
+    }
+
+    Matcher driveAway = DRIVE_AWAY_FROM_TARGET.matcher(line);
+    if (driveAway.matches()) {
+      double feet = Double.parseDouble(driveAway.group(1));
+      return new AutoStep.DriveAway(feet * kFeetToMeters);
     }
 
     Matcher rotate = ROTATE.matcher(line);

@@ -353,6 +353,10 @@ public class RobotContainer {
   private Command autoStepCommand(AutoStep step) {
     if (step instanceof AutoStep.Drive drive) {
         return driveStepCommand(drive);
+    } else if (step instanceof AutoStep.DriveToward driveToward) {
+        return driveTowardTargetCommand(driveToward.distanceMeters());
+    } else if (step instanceof AutoStep.DriveAway driveAway) {
+        return driveAwayFromTargetCommand(driveAway.distanceMeters());
     } else if (step instanceof AutoStep.Rotate rotate) {
         return rotateCommand(rotate.degrees());
     } else if (step instanceof AutoStep.Wait wait) {
@@ -382,6 +386,56 @@ public class RobotContainer {
         default -> 0.0;
     };
     return driveDistanceCommand(vx, vy, step.distanceMeters());
+  }
+
+  /**
+   * Turns a "drive toward target <distance> feet" step into a straight robot-centric drive
+   * forward, correcting aim toward whichever AprilTag is currently in view the whole time it's
+   * visible. See {@link #driveWithVisionCorrectionCommand} for the shared details.
+   */
+  private Command driveTowardTargetCommand(double distanceMeters) {
+    return driveWithVisionCorrectionCommand(-AutoConstants.kLineUpNearApproachSpeedMps, distanceMeters);
+  }
+
+  /**
+   * Turns a "drive away from target <distance> feet" step into a straight robot-centric drive
+   * backward - simply reverses {@link #driveTowardTargetCommand}'s wheel direction rather than
+   * re-pointing the wheels, same relationship as {@code BACKWARD} to {@code FORWARD} in {@link
+   * #driveStepCommand}. Still corrects aim toward whichever AprilTag is in view the whole time,
+   * even while backing away from it - see {@link #driveWithVisionCorrectionCommand}.
+   */
+  private Command driveAwayFromTargetCommand(double distanceMeters) {
+    return driveWithVisionCorrectionCommand(AutoConstants.kLineUpNearApproachSpeedMps, distanceMeters);
+  }
+
+  /**
+   * Shared by "drive toward target" and "drive away from target": drives straight
+   * (robot-centric) at {@code vxMps}, correcting aim toward whichever AprilTag is currently
+   * best-seen (not a specific ID - simply whatever's in view) the whole time it's visible, in
+   * either direction. Once it goes out of view (e.g. the robot got too close for the camera to
+   * see the whole tag, or it fell out of view while backing away), it stops correcting and just
+   * keeps driving straight in whatever direction it was last facing for the rest of the
+   * distance, rather than searching for it. Uses the same gentler speed as "align with april
+   * tag ... and go to it" uses once it's close to a tag, since these steps are meant for that
+   * same close-to-a-target situation, not covering open ground.
+   */
+  private Command driveWithVisionCorrectionCommand(double vxMps, double distanceMeters) {
+    Pose2d[] startPose = {null};
+    return Commands.sequence(
+        Commands.runOnce(() -> {
+            startPose[0] = drivetrain.getState().Pose;
+            m_alignRotationController.reset();
+        }, drivetrain),
+        Commands.run(() -> {
+            double rotationalRate = vision.hasTarget() ? computeAlignRotationalRate() : 0.0;
+            drivetrain.setControl(autoDrive.withVelocityX(vxMps).withVelocityY(0)
+                .withRotationalRate(rotationalRate));
+        }, drivetrain, vision)
+            .until(() -> startPose[0].getTranslation()
+                .getDistance(drivetrain.getState().Pose.getTranslation()) >= distanceMeters),
+        Commands.runOnce(() -> drivetrain.setControl(
+            autoDrive.withVelocityX(0).withVelocityY(0).withRotationalRate(0)), drivetrain)
+    );
   }
 
   /**
@@ -752,7 +806,9 @@ public class RobotContainer {
    * Command to run in autonomous, built from the instructions in deploy/autonomous.json (see
    * README.md for the supported instructions). Returns null (nothing runs) if that file is
    * missing or has a mistake in it - {@link Robot} skips scheduling when this is null. Each step
-   * beeps once it finishes - see {@link #beepCommand}.
+   * beeps once it finishes - see {@link #beepCommand} - unless {@link
+   * AutoConstants#kStepCompleteBeepEnabled} is false, in which case the beep is skipped
+   * entirely (not just silenced) so cycle times aren't padded out waiting on it.
    *
    * @return the command to run in autonomous, or null for none
    */
@@ -761,7 +817,9 @@ public class RobotContainer {
         return null;
     }
     return Commands.sequence(m_autoSteps.stream()
-        .map(step -> autoStepCommand(step).andThen(beepCommand()))
+        .map(step -> AutoConstants.kStepCompleteBeepEnabled
+            ? autoStepCommand(step).andThen(beepCommand())
+            : autoStepCommand(step))
         .toArray(Command[]::new));
   }
 }

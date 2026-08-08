@@ -94,6 +94,11 @@ public final class Constants {
     // use their own separate speed/gain constants, so this is safe to tune independently.
     public static final double kAutoRotateSpeedRadPerSec = 2.0;
 
+    // Set false to skip the step-complete beep entirely (not just silence it) - speeds up
+    // autonomous cycle times when you don't need the audible confirmation, since every step
+    // otherwise waits for its beep to fully finish before the next one starts.
+    public static final boolean kStepCompleteBeepEnabled = true;
+
     // The beep every drivetrain motor plays when an autonomous step finishes alternates between
     // two tones (Hz), switching every kStepCompleteBeepNoteSeconds, for a total of
     // kStepCompleteBeepSeconds - see RobotContainer.beepCommand().

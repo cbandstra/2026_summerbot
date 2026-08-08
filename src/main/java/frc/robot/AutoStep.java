@@ -7,6 +7,20 @@ public sealed interface AutoStep {
   /** Drive one direction for a distance, then stop. */
   record Drive(Direction direction, double distanceMeters) implements AutoStep {}
 
+  /**
+   * Drive straight for a distance in whichever direction the robot is currently facing (e.g.
+   * after a {@code rotate} step aimed it at a target), then stop. Same robot-relative "forward"
+   * as {@link Drive} with {@link Direction#FORWARD} - just named for the "rotate toward a
+   * target, then drive at it" script pattern.
+   */
+  record DriveToward(double distanceMeters) implements AutoStep {}
+
+  /**
+   * Drive straight for a distance in the opposite direction the robot is currently facing -
+   * simply reverses {@link DriveToward}'s wheel direction rather than re-pointing the wheels.
+   */
+  record DriveAway(double distanceMeters) implements AutoStep {}
+
   /** Turn in place. Positive degrees = counterclockwise, negative = clockwise. */
   record Rotate(double degrees) implements AutoStep {}
 
