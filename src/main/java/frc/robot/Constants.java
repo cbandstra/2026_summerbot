@@ -68,7 +68,7 @@ public final class Constants {
     // Search doesn't spin continuously - it spins this many degrees, pauses, spins again, and so
     // on until a tag is seen. Gives the camera a steady look between pulses instead of only ever
     // seeing tags blur past while turning.
-    public static final double kSearchSpinDegrees = 60.0;
+    public static final double kSearchSpinDegrees = 50.0;
 
     // How long (seconds) to sit still between each pulse of the search spin.
     public static final double kSearchPauseSeconds = 0.5;
