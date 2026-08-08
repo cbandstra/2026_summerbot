@@ -92,6 +92,15 @@ AprilTag targets. Yaw readings are latency-compensated against the robot's odome
 doesn't overshoot on stale frames. Alignment PID gains and the search-spin rate live in
 `VisionConstants` in [`Constants.java`](src/main/java/frc/robot/Constants.java).
 
+### Driver camera
+
+A Logitech C920 plugged directly into the roboRIO's own USB port streams to the Driver Station as
+a plain video feed for the human driver — separate from the PhotonVision cameras above, which are
+for vision processing, not for a person to look at. It shows up automatically in the Driver
+Station's camera tab (or a Camera Stream widget in Shuffleboard/Elastic), no extra setup needed.
+Kept to a low resolution/fps (set in [`Robot.java`](src/main/java/frc/robot/Robot.java)) since
+match radio bandwidth is limited and shared with everything else the robot sends.
+
 ## Project layout
 
 | File | Purpose |

@@ -4,6 +4,8 @@
 
 package frc.robot;
 
+import edu.wpi.first.cameraserver.CameraServer;
+import edu.wpi.first.util.PixelFormat;
 import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.CommandScheduler;
@@ -26,6 +28,12 @@ public class Robot extends TimedRobot {
     // Prune old SignalLogger session folders before anything (CTRE devices, RobotContainer)
     // gets a chance to try starting a new log - see LogCleanup for why this is needed.
     LogCleanup.pruneIfLow();
+
+    // Streams the C920 plugged into the roboRIO's own USB port to the Driver Station as a
+    // driver camera - separate from the OrangePi/PhotonVision cameras, which are for vision
+    // processing, not for the human driver to look at. Kept small (low res/fps) since match
+    // radio bandwidth is limited and shared with everything else the robot sends.
+    CameraServer.startAutomaticCapture().setVideoMode(PixelFormat.kMJPEG, 320, 240, 15);
 
     // Instantiate our RobotContainer.  This will perform all our button bindings, and put our
     // autonomous chooser on the dashboard.
