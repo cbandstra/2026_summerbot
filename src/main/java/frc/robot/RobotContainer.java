@@ -8,6 +8,10 @@ import static edu.wpi.first.units.Units.MetersPerSecond;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.function.Supplier;
+
+import org.photonvision.targeting.PhotonTrackedTarget;
 
 import com.ctre.phoenix6.Utils;
 import com.ctre.phoenix6.controls.MusicTone;
@@ -103,6 +107,11 @@ public class RobotContainer {
   // does that count as "found" for clearing the override.
   private boolean m_forcingClockwiseSeenLoss = false;
 
+  // True while target lock is toggled on but temporarily suspended after button 9 is released -
+  // stops it from actively driving without turning it off outright, so it comes right back once
+  // an AprilTag's in view again instead of needing button 2 to turn it back on.
+  private boolean m_targetLockSuspended = false;
+
   // True until the robot's been enabled once since power-on. The gyro zeroes itself to whichever
   // way the robot happens to be pointed when the roboRIO boots - if that's not facing away from
   // the driver station (e.g. it booted on a cart or the pit table), "forward" on the stick drives
@@ -165,6 +174,7 @@ public class RobotContainer {
             RobotLog.log("Target lock: OFF (robot disabled)");
         }
         m_forcingClockwiseUntilFound = false;
+        m_targetLockSuspended = false;
     }));
 
     // First time the robot's enabled after booting, treat wherever it's currently facing as
@@ -210,6 +220,7 @@ public class RobotContainer {
         }
         if (!m_targetLockToggleOn) {
             m_forcingClockwiseUntilFound = false;
+            m_targetLockSuspended = false;
         }
     }));
 
@@ -243,7 +254,26 @@ public class RobotContainer {
         m_forcingClockwiseSeenLoss = false;
     }));
 
-    new Trigger(() -> targetLockButton.getAsBoolean() || m_targetLockToggleOn).whileTrue(
+    // Buttons 8, 9, and 10 (declared below) take the drivetrain over completely while held, same
+    // as target lock does - declared here (before they're bound) so target lock's own trigger can
+    // yield to them below.
+    Trigger driveAwayLockedTargetButton =
+        m_driverController.button(OperatorConstants.kThrustmasterDriveAwayFromLockedTargetButton);
+    Trigger driveTowardLockedTargetButton =
+        m_driverController.button(OperatorConstants.kThrustmasterDriveTowardLockedTargetButton);
+    Trigger lineUpLockedTargetButton =
+        m_driverController.button(OperatorConstants.kThrustmasterLineUpLockedTargetButton);
+
+    // Excludes buttons 8/9/10 (and being suspended after 8/9 - see m_targetLockSuspended) so
+    // pressing any of them cleanly hands off the drivetrain (a real falling edge on this trigger)
+    // instead of just having its command's requirement silently stolen out from under it -
+    // otherwise, since m_targetLockToggleOn can stay true the whole time, releasing 8/9/10 would
+    // never see a fresh rising edge here to schedule target lock's command again, leaving it dead
+    // (looking like buttons 2/3/4 stopped doing anything) until toggled off and back on.
+    new Trigger(() -> (targetLockButton.getAsBoolean() || m_targetLockToggleOn)
+        && !driveAwayLockedTargetButton.getAsBoolean() && !driveTowardLockedTargetButton.getAsBoolean()
+        && !lineUpLockedTargetButton.getAsBoolean() && !m_targetLockSuspended)
+        .whileTrue(
         Commands.startRun(
             () -> {
                 m_alignRotationController.reset();
@@ -313,6 +343,50 @@ public class RobotContainer {
             drivetrain, vision
         )
     );
+
+    // One shared "suspend target lock" handler for both drive buttons (8/9) - see each button's
+    // own onFalse below for when it's actually wired up.
+    Runnable suspendTargetLockIfOn = () -> {
+        if (m_targetLockToggleOn) {
+            m_targetLockSuspended = true;
+            RobotLog.log("Target lock: suspended (drive button released) until a tag's in view");
+        }
+    };
+    new Trigger(() -> m_targetLockSuspended && vision.hasTarget()).onTrue(Commands.runOnce(() -> {
+        m_targetLockSuspended = false;
+        RobotLog.log("Target lock: resumed (tag back in view)");
+    }));
+
+    // Button 9: held equivalent of the "drive toward target" autonomous step - drives forward,
+    // correcting aim toward whichever AprilTag's in view, for as long as it's held (instead of a
+    // fixed distance) - ignoring the stick the whole time, same as every other button here that
+    // takes over the drivetrain. Takes priority over buttons 8 and 10 if more than one is held
+    // (see their own triggers).
+    //
+    // If target lock is on when released, it doesn't just resume immediately - it's suspended
+    // (see m_targetLockSuspended) until an AprilTag's actually back in view, so it doesn't
+    // suddenly spin off searching right as the driver lets go. If target lock was already off,
+    // releasing does nothing extra.
+    driveTowardLockedTargetButton.onFalse(Commands.runOnce(suspendTargetLockIfOn));
+    driveTowardLockedTargetButton.whileTrue(driveTowardTargetHeldCommand());
+
+    // Button 8: held equivalent of the "drive away from target" autonomous step - same as button
+    // 9 but backward. Excludes whenever button 9 is also held so button 9 always wins if both are
+    // pressed (driving toward and away at once doesn't make sense). Same target-lock suspend
+    // behavior on release as button 9.
+    Trigger driveAwayEffectiveButton = new Trigger(() -> driveAwayLockedTargetButton.getAsBoolean()
+        && !driveTowardLockedTargetButton.getAsBoolean());
+    driveAwayEffectiveButton.onFalse(Commands.runOnce(suspendTargetLockIfOn));
+    driveAwayEffectiveButton.whileTrue(driveAwayFromTargetHeldCommand());
+
+    // Button 10: held equivalent of "align with april tag ... and go to it" - searches for,
+    // then drives up to and squares up on, whichever tag is currently best-seen (the one target
+    // lock would align to), for as long as it's held. Excludes whenever button 8 or 9 is also
+    // held so either drive button always wins if more than one is pressed, rather than racing
+    // the scheduler.
+    new Trigger(() -> lineUpLockedTargetButton.getAsBoolean()
+        && !driveAwayLockedTargetButton.getAsBoolean() && !driveTowardLockedTargetButton.getAsBoolean())
+        .whileTrue(lineUpToLockedTargetCommand());
 
     drivetrain.registerTelemetry(logger::telemeterize);
   }
@@ -488,6 +562,24 @@ public class RobotContainer {
   }
 
   /**
+   * Button 9's held equivalent of "drive toward target": drives forward, correcting aim toward
+   * whichever AprilTag is in view, for as long as the button stays held instead of a fixed
+   * distance - see {@link #driveWithVisionCorrectionCommand}.
+   */
+  private Command driveTowardTargetHeldCommand() {
+    return driveWithVisionCorrectionCommand(-AutoConstants.kLineUpNearApproachSpeedMps, 0);
+  }
+
+  /**
+   * Button 8's held equivalent of "drive away from target": drives backward, correcting aim
+   * toward whichever AprilTag is in view, for as long as the button stays held instead of a
+   * fixed distance - see {@link #driveWithVisionCorrectionCommand}.
+   */
+  private Command driveAwayFromTargetHeldCommand() {
+    return driveWithVisionCorrectionCommand(AutoConstants.kLineUpNearApproachSpeedMps, 0);
+  }
+
+  /**
    * Shared by "drive toward target" and "drive away from target": drives straight
    * (robot-centric) at {@code vxMps}, correcting aim toward whichever AprilTag is currently
    * best-seen (not a specific ID - simply whatever's in view) the whole time it's visible, in
@@ -496,22 +588,27 @@ public class RobotContainer {
    * keeps driving straight in whatever direction it was last facing for the rest of the
    * distance, rather than searching for it. Uses the same gentler speed as "align with april
    * tag ... and go to it" uses once it's close to a tag, since these steps are meant for that
-   * same close-to-a-target situation, not covering open ground.
+   * same close-to-a-target situation, not covering open ground. {@code distanceMeters} of 0
+   * means no distance limit - keeps driving until the caller cancels the command (e.g. a button
+   * release), for button 9's held version.
    */
   private Command driveWithVisionCorrectionCommand(double vxMps, double distanceMeters) {
     Pose2d[] startPose = {null};
+    Command driveLoop = Commands.run(() -> {
+        double rotationalRate = vision.hasTarget() ? computeAlignRotationalRate() : 0.0;
+        drivetrain.setControl(autoDrive.withVelocityX(vxMps).withVelocityY(0)
+            .withRotationalRate(rotationalRate));
+    }, drivetrain, vision);
+    if (distanceMeters > 0) {
+        driveLoop = driveLoop.until(() -> startPose[0].getTranslation()
+            .getDistance(drivetrain.getState().Pose.getTranslation()) >= distanceMeters);
+    }
     return Commands.sequence(
         Commands.runOnce(() -> {
             startPose[0] = drivetrain.getState().Pose;
             m_alignRotationController.reset();
         }, drivetrain),
-        Commands.run(() -> {
-            double rotationalRate = vision.hasTarget() ? computeAlignRotationalRate() : 0.0;
-            drivetrain.setControl(autoDrive.withVelocityX(vxMps).withVelocityY(0)
-                .withRotationalRate(rotationalRate));
-        }, drivetrain, vision)
-            .until(() -> startPose[0].getTranslation()
-                .getDistance(drivetrain.getState().Pose.getTranslation()) >= distanceMeters),
+        driveLoop,
         Commands.runOnce(() -> drivetrain.setControl(
             autoDrive.withVelocityX(0).withVelocityY(0).withRotationalRate(0)), drivetrain)
     );
@@ -627,6 +724,33 @@ public class RobotContainer {
    * rest of the autonomous sequence forever.
    */
   private Command lineUpToTagCommand(int tagId) {
+    return lineUpToTargetCommand(() -> vision.getTargetById(tagId),
+        "align with april tag " + tagId + " and go to it", true, AutoConstants.kLineUpTimeoutSeconds);
+  }
+
+  /**
+   * Button 10's held equivalent of "align with april tag ... and go to it": same search/drive/
+   * square-up behavior as {@link #lineUpToTagCommand}, but the target is whichever tag is
+   * currently best-seen (the one target lock would align to) instead of a fixed ID, and it never
+   * stops or times out on its own - it keeps refining (or holding position once centered) for as
+   * long as the button stays held, and stops only when released.
+   */
+  private Command lineUpToLockedTargetCommand() {
+    return lineUpToTargetCommand(vision::getBestTarget,
+        "button 10: line up with locked-on target", false, 0);
+  }
+
+  /**
+   * Shared by {@link #lineUpToTagCommand} and {@link #lineUpToLockedTargetCommand}: spins
+   * (searching with a pulsed search if {@code targetSupplier} doesn't return a target yet), then
+   * drives straight at it while continuously correcting aim, squaring up once close. {@code
+   * stopWhenCentered} true finishes the command once {@link AutoConstants#kLineUpDistanceMeters}
+   * away and centered (the autonomous step's behavior); false keeps it running indefinitely
+   * instead, relying on the caller to cancel it (the button's behavior, tied to release).
+   * {@code timeoutSeconds} of 0 means no timeout.
+   */
+  private Command lineUpToTargetCommand(Supplier<Optional<PhotonTrackedTarget>> targetSupplier,
+      String logLabel, boolean stopWhenCentered, double timeoutSeconds) {
     double[] yawErrorDegrees = {Double.MAX_VALUE};
     double[] distanceMeters = {Double.MAX_VALUE};
     double[] tagZAngleDegrees = {Double.MAX_VALUE};
@@ -650,18 +774,8 @@ public class RobotContainer {
     boolean[] rotationLimiterPrimed = {false};
     boolean[] loggedSearching = {false};
 
-    return Commands.sequence(
-        Commands.runOnce(() -> {
-            m_alignRotationController.reset();
-            search.reset(drivetrain.getState().Pose.getRotation());
-            vxLimiter.reset(0);
-            vyLimiter.reset(0);
-            rotationLimiterPrimed[0] = false;
-            stepTimer.restart();
-            loggedSearching[0] = false;
-        }, drivetrain),
-        Commands.run(() -> {
-            var target = vision.getTargetById(tagId);
+    Command approachLoop = Commands.run(() -> {
+            var target = targetSupplier.get();
             double rotationalRate;
             double vx;
             double vy;
@@ -729,7 +843,7 @@ public class RobotContainer {
                 vy = 0.0;
             } else {
                 if (!loggedSearching[0]) {
-                    RobotLog.log("align with april tag " + tagId + " and go to it: grace period elapsed, searching");
+                    RobotLog.log(logLabel + ": grace period elapsed, searching");
                     loggedSearching[0] = true;
                 }
                 yawErrorDegrees[0] = Double.MAX_VALUE;
@@ -748,11 +862,26 @@ public class RobotContainer {
             drivetrain.setControl(autoDrive.withVelocityX(vxLimiter.calculate(vx))
                 .withVelocityY(vyLimiter.calculate(vy))
                 .withRotationalRate(rotationLimiter.calculate(rotationalRate)));
-        }, drivetrain, vision)
-            .until(() -> isCentered(tagZAngleDegrees[0], cameraToTagYMeters[0])
-                && Math.abs(distanceMeters[0] - AutoConstants.kLineUpDistanceMeters)
-                    <= AutoConstants.kLineUpDistanceToleranceMeters)
-            .withTimeout(AutoConstants.kLineUpTimeoutSeconds),
+        }, drivetrain, vision);
+    if (stopWhenCentered) {
+        approachLoop = approachLoop.until(() -> isCentered(tagZAngleDegrees[0], cameraToTagYMeters[0])
+            && Math.abs(distanceMeters[0] - AutoConstants.kLineUpDistanceMeters)
+                <= AutoConstants.kLineUpDistanceToleranceMeters);
+    }
+    if (timeoutSeconds > 0) {
+        approachLoop = approachLoop.withTimeout(timeoutSeconds);
+    }
+    return Commands.sequence(
+        Commands.runOnce(() -> {
+            m_alignRotationController.reset();
+            search.reset(drivetrain.getState().Pose.getRotation());
+            vxLimiter.reset(0);
+            vyLimiter.reset(0);
+            rotationLimiterPrimed[0] = false;
+            stepTimer.restart();
+            loggedSearching[0] = false;
+        }, drivetrain),
+        approachLoop,
         Commands.runOnce(() -> drivetrain.setControl(
             autoDrive.withVelocityX(0).withVelocityY(0).withRotationalRate(0)), drivetrain)
     );

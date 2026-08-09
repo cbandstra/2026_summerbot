@@ -55,6 +55,11 @@ public class Vision extends SubsystemBase {
     return currentTargets.stream().filter(t -> t.getFiducialId() == fiducialId).findFirst();
   }
 
+  /** Whichever tag is currently best-seen - the one target lock aligns to. Empty if none. */
+  public Optional<PhotonTrackedTarget> getBestTarget() {
+    return bestTarget;
+  }
+
   /** Yaw to the best-seen tag, in degrees. Positive means the tag is left of center. 0 if no target. */
   public double getTargetYawDegrees() {
     return bestTarget.map(PhotonTrackedTarget::getYaw).orElse(0.0);
