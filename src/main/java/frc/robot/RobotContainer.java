@@ -547,7 +547,7 @@ public class RobotContainer {
    * visible. See {@link #driveWithVisionCorrectionCommand} for the shared details.
    */
   private Command driveTowardTargetCommand(double distanceMeters) {
-    return driveWithVisionCorrectionCommand(-AutoConstants.kLineUpNearApproachSpeedMps, distanceMeters);
+    return driveWithVisionCorrectionCommand(-AutoConstants.kDriveTowardAwaySpeedMps, distanceMeters);
   }
 
   /**
@@ -558,7 +558,7 @@ public class RobotContainer {
    * even while backing away from it - see {@link #driveWithVisionCorrectionCommand}.
    */
   private Command driveAwayFromTargetCommand(double distanceMeters) {
-    return driveWithVisionCorrectionCommand(AutoConstants.kLineUpNearApproachSpeedMps, distanceMeters);
+    return driveWithVisionCorrectionCommand(AutoConstants.kDriveTowardAwaySpeedMps, distanceMeters);
   }
 
   /**
@@ -567,7 +567,7 @@ public class RobotContainer {
    * distance - see {@link #driveWithVisionCorrectionCommand}.
    */
   private Command driveTowardTargetHeldCommand() {
-    return driveWithVisionCorrectionCommand(-AutoConstants.kLineUpNearApproachSpeedMps, 0);
+    return driveWithVisionCorrectionCommand(-AutoConstants.kDriveTowardAwaySpeedMps, 0);
   }
 
   /**
@@ -576,7 +576,7 @@ public class RobotContainer {
    * fixed distance - see {@link #driveWithVisionCorrectionCommand}.
    */
   private Command driveAwayFromTargetHeldCommand() {
-    return driveWithVisionCorrectionCommand(AutoConstants.kLineUpNearApproachSpeedMps, 0);
+    return driveWithVisionCorrectionCommand(AutoConstants.kDriveTowardAwaySpeedMps, 0);
   }
 
   /**
@@ -586,11 +586,9 @@ public class RobotContainer {
    * either direction. Once it goes out of view (e.g. the robot got too close for the camera to
    * see the whole tag, or it fell out of view while backing away), it stops correcting and just
    * keeps driving straight in whatever direction it was last facing for the rest of the
-   * distance, rather than searching for it. Uses the same gentler speed as "align with april
-   * tag ... and go to it" uses once it's close to a tag, since these steps are meant for that
-   * same close-to-a-target situation, not covering open ground. {@code distanceMeters} of 0
-   * means no distance limit - keeps driving until the caller cancels the command (e.g. a button
-   * release), for button 9's held version.
+   * distance, rather than searching for it. {@code distanceMeters} of 0 means no distance limit
+   * - keeps driving until the caller cancels the command (e.g. a button release), for buttons
+   * 8/9's held versions.
    */
   private Command driveWithVisionCorrectionCommand(double vxMps, double distanceMeters) {
     Pose2d[] startPose = {null};

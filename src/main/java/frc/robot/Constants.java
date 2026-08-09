@@ -134,10 +134,18 @@ public final class Constants {
     // The approach speed isn't one constant - it's fast (kLineUpFarApproachSpeedMps) until
     // within kLineUpNearDistanceMeters of the tag, then slows to kLineUpNearApproachSpeedMps for
     // the final approach so it doesn't come in too hot to fine-tune its alignment. Independent of
-    // kAutoDriveSpeedMps, which is used by the plain drive/align steps instead.
+    // kAutoDriveSpeedMps, which is used by the plain drive/align steps instead. Deliberately NOT
+    // shared with kDriveTowardAwaySpeedMps below (used to be, until doubling that one for speed
+    // would have also sped up this precision final-approach/squaring phase).
     public static final double kLineUpFarApproachSpeedMps = 1.5;
     public static final double kLineUpNearApproachSpeedMps = 0.5;
     public static final double kLineUpNearDistanceMeters = 2.0;
+
+    // Speed (m/s) for "drive toward target"/"drive away from target" - both the autonomous steps
+    // and their held teleop equivalents (buttons 8/9). Doubled from kLineUpNearApproachSpeedMps's
+    // old shared value (0.5) since these steps aren't doing fine precision work like "align with
+    // april tag ... and go to it" is - see kLineUpNearApproachSpeedMps's own comment.
+    public static final double kDriveTowardAwaySpeedMps = 1.0;
 
     // While still far out, aiming at the tag's center normally allows up to the drivetrain's
     // full turn speed (kMaxAngularRate) - but a big initial yaw error right after the search
