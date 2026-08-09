@@ -77,10 +77,10 @@ public final class Constants {
     // Search alternates fast/slow - it spins fast this many degrees, then spins slow for
     // kSearchSlowPhaseSeconds, then spins fast again, and so on until a tag is seen. Gives the
     // camera a steadier look during the slow phase instead of only ever seeing tags blur past.
-    public static final double kSearchSpinDegrees = 20.0;
+    public static final double kSearchSpinDegrees = 15.0;
 
     // How long (seconds) to spin at the slow rate between each fast pulse of the search spin.
-    public static final double kSearchSlowPhaseSeconds = 1;
+    public static final double kSearchSlowPhaseSeconds = 0.5;
 
     // If target lock loses a tag while it was closer than this (meters), the tag was probably
     // lost because the robot got too close for the camera to see the whole thing - not because
@@ -108,15 +108,15 @@ public final class Constants {
     // kStepCompleteBeepSeconds - see RobotContainer.beepCommand().
     public static final double kStepCompleteBeepHz = 880.0;
     public static final double kStepCompleteBeepHz2 = 660.0;
-    public static final double kStepCompleteBeepNoteSeconds = 0.15;
-    public static final double kStepCompleteBeepSeconds = 0.5;
+    public static final double kStepCompleteBeepNoteSeconds = 0.125;
+    public static final double kStepCompleteBeepSeconds = 0.2;
 
     // "Align with april tag" and "align with april tag ... and go to it" hold still (instead of
     // immediately spinning to search) for this long at the very start, in case the tag is
     // already in view but the camera just hasn't reported this frame's detection yet (e.g. right
     // as a preceding rotate step finishes) - avoids a needless spin burst before vision catches
     // up on something that was already there.
-    public static final double kAutoSearchInitialGraceSeconds = 0.5;
+    public static final double kAutoSearchInitialGraceSeconds = 0.25;
 
     // Yaw error (degrees) within which "align with april tag" counts as done.
     public static final double kAutoAlignToleranceDegrees = 1.5;
