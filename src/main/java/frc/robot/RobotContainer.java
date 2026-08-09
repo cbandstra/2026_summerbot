@@ -822,12 +822,22 @@ public class RobotContainer {
                     // Stopped driving forward - squaring up is a rotation problem, and centering
                     // is a translation problem, so correct each directly instead of only aiming
                     // at the tag's center and hoping strafing fixes the skew as a side effect.
-                    rotationalRate = MathUtil.clamp(AutoConstants.kLineUpSquareKP * zAngleErrorDegrees,
-                        -kMaxAngularRate, kMaxAngularRate);
+                    // Both are fully deadbanded (zeroed, not just un-floored) once within the same
+                    // tolerance that judges "centered" - otherwise, holding button 10 right at the
+                    // edge of good-enough keeps nudging back and forth chasing vision noise around
+                    // zero error, which shows up as wheel chatter with nothing left to actually fix.
+                    boolean zAngleOutOfTolerance = Math.abs(zAngleErrorDegrees)
+                        > AutoConstants.kLineUpCenteredZAngleToleranceDegrees;
+                    rotationalRate = zAngleOutOfTolerance
+                        ? MathUtil.clamp(AutoConstants.kLineUpSquareKP * zAngleErrorDegrees,
+                            -kMaxAngularRate, kMaxAngularRate)
+                        : 0.0;
                     boolean yOutOfTolerance = Math.abs(yErrorMeters)
                         > AutoConstants.kLineUpCenteredYToleranceMeters;
-                    vy = flooredAndClamped(AutoConstants.kLineUpCenterStrafeKP * yErrorMeters,
-                        yOutOfTolerance, AutoConstants.kLineUpStrafeMinMps, AutoConstants.kLineUpCloseStrafeMaxMps);
+                    vy = yOutOfTolerance
+                        ? flooredAndClamped(AutoConstants.kLineUpCenterStrafeKP * yErrorMeters,
+                            true, AutoConstants.kLineUpStrafeMinMps, AutoConstants.kLineUpCloseStrafeMaxMps)
+                        : 0.0;
                 }
             } else if (!stepTimer.hasElapsed(AutoConstants.kAutoSearchInitialGraceSeconds)) {
                 // Might just be a not-yet-reported frame, not an actually-missing tag - hold
