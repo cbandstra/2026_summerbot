@@ -60,6 +60,11 @@ public class Vision extends SubsystemBase {
     return bestTarget;
   }
 
+  /** Fiducial IDs of every tag visible in the most recent camera frame, not just the "best" one. */
+  public Set<Integer> getVisibleTagIds() {
+    return currentTargets.stream().map(PhotonTrackedTarget::getFiducialId).collect(Collectors.toSet());
+  }
+
   /** Yaw to the best-seen tag, in degrees. Positive means the tag is left of center. 0 if no target. */
   public double getTargetYawDegrees() {
     return bestTarget.map(PhotonTrackedTarget::getYaw).orElse(0.0);

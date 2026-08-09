@@ -73,12 +73,16 @@ public final class Constants {
     public static final boolean kSearchPulseEnabled = true;
 
     // How fast (rad/s) to spin during each fast pulse while searching for a tag - or the single
-    // steady spin rate if kSearchPulseEnabled is false.
-    public static final double kSearchRotationRadPerSec = 2.0;
+    // steady spin rate if kSearchPulseEnabled is false. Tuned from the "Vision rotation test"
+    // autonomous step (2026-08-09): all 3 tags in the test area were reliably detected up through
+    // fast=3.50/slow=0.70 rad/s, dropping to 2 by fast=4.00/slow=0.80 - these two constants are
+    // set a bit below that observed failure point for margin.
+    public static final double kSearchRotationRadPerSec = 3.0;
 
     // How fast (rad/s) to spin during the slow phase between pulses. Slower than the fast pulse,
-    // but not stopped, so the camera gets a steadier look without giving up ground entirely.
-    public static final double kSearchSlowRotationRadPerSec = 0.5;
+    // but not stopped, so the camera gets a steadier look without giving up ground entirely. See
+    // kSearchRotationRadPerSec's comment - tuned from the same test run.
+    public static final double kSearchSlowRotationRadPerSec = 0.6;
 
     // Search alternates fast/slow - it spins fast this many degrees, then spins slow for
     // kSearchSlowPhaseSeconds, then spins fast again, and so on until a tag is seen. Gives the
@@ -228,5 +232,41 @@ public final class Constants {
     // on/off, which otherwise show up as jerky, jumpy motion instead of a smooth correction.
     public static final double kLineUpTranslationSlewMpsPerSec = 1.5;
     public static final double kLineUpRotationSlewRadPerSecSquared = 6.0;
+  }
+
+  /**
+   * Tuning for the "Vision rotation test" autonomous mode (a dashboard-selectable diagnostic,
+   * not part of the normal scripted autonomous.json run) - see
+   * RobotContainer.visionRotationTestCommand() for what it actually does.
+   */
+  public static class RotationTestConstants {
+    // Rotation rate (rad/s) used to spin slowly until no AprilTag is in view, run before every
+    // measured rotation so each one starts from the same clean "nothing visible" state instead
+    // of double-counting a tag that was already in view when it started.
+    public static final double kClearViewRotationRadPerSec = 0.5;
+
+    // How long (seconds) "spin until no tag in view" is allowed to try before giving up and
+    // moving on anyway - in case a tag is visible from literally every angle (e.g. surrounded by
+    // tags in a small room), so that can't hang the test forever.
+    public static final double kClearViewTimeoutSeconds = 10.0;
+
+    // Steady-speed sequences spin at one constant rate: sequence 1 uses this starting speed, and
+    // each later sequence adds this increment again, for as long as the unique-tag count hasn't
+    // dropped from the previous sequence. Started at 0.1 originally, but that's only ~2% of the
+    // drivetrain's actual max turn rate - likely too far below the wheels' static friction
+    // threshold to move at all. Raised to match kClearViewRotationRadPerSec, which is confirmed
+    // to actually turn the robot.
+    public static final double kSteadySpeedStartRadPerSec = 0.5;
+    public static final double kSteadySpeedIncrementRadPerSec = 0.1;
+
+    // Pulse sequences spin in target lock's own fast/slow pulse pattern (same
+    // kSearchSpinDegrees/kSearchSlowPhaseSeconds timing as VisionConstants, just with these
+    // speeds instead) - sequence 1 uses these starting fast/slow speeds, and each later sequence
+    // adds these increments to both, for as long as the unique-tag count hasn't dropped from the
+    // previous sequence. Once it does, the whole test ends.
+    public static final double kPulseFastSpeedStartRadPerSec = 1.0;
+    public static final double kPulseFastSpeedIncrementRadPerSec = 0.5;
+    public static final double kPulseSlowSpeedStartRadPerSec = 0.5;
+    public static final double kPulseSlowSpeedIncrementRadPerSec = 0.1;
   }
 }

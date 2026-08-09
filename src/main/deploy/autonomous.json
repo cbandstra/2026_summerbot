@@ -1,4 +1,5 @@
 [
+  "// --- Working script ---",
   "rotate 80 degrees counterclockwise",
   "align with april tag 4 and go to it",
   "drive toward target 4 feet",
@@ -27,5 +28,6 @@
   "// wait # seconds",
   "// align with april tag #",
   "// align with april tag # and go to it",
-  "// recenter"
+  "// recenter",
+  "// vision rotation test"
 ]

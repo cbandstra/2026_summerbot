@@ -38,4 +38,10 @@ public sealed interface AutoStep {
    * field-centric driving. Doesn't move the robot or touch its tracked field position.
    */
   record Recenter() implements AutoStep {}
+
+  /**
+   * Diagnostic, not a real match step - see RobotContainer.visionRotationTestCommand() for what
+   * it actually does. Finds how fast the robot can spin while still reliably seeing AprilTags.
+   */
+  record VisionRotationTest() implements AutoStep {}
 }

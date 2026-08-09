@@ -107,6 +107,12 @@ class AutoScriptTest {
   }
 
   @Test
+  void visionRotationTest() {
+    AutoScript.parseLine("vision rotation test");
+    AutoScript.parseLine("VISION ROTATION TEST");
+  }
+
+  @Test
   void isCaseInsensitive() {
     var step = (AutoStep.Drive) AutoScript.parseLine("DRIVE FORWARD 3 FEET");
     assertEquals(AutoStep.Direction.FORWARD, step.direction());

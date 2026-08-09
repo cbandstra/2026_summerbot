@@ -47,6 +47,8 @@ public final class AutoScript {
       "align\\s+(?:with|to)\\s+april\\s*tag\\s+#?(\\d+)\\s+and\\s+go\\s+to\\s+it",
       Pattern.CASE_INSENSITIVE);
   private static final Pattern RECENTER = Pattern.compile("recenter", Pattern.CASE_INSENSITIVE);
+  private static final Pattern VISION_ROTATION_TEST = Pattern.compile(
+      "vision\\s+rotation\\s+test", Pattern.CASE_INSENSITIVE);
 
   private AutoScript() {}
 
@@ -139,6 +141,11 @@ public final class AutoScript {
     Matcher recenter = RECENTER.matcher(line);
     if (recenter.matches()) {
       return new AutoStep.Recenter();
+    }
+
+    Matcher visionRotationTest = VISION_ROTATION_TEST.matcher(line);
+    if (visionRotationTest.matches()) {
+      return new AutoStep.VisionRotationTest();
     }
 
     throw new IllegalArgumentException("don't understand instruction \"" + line + "\"");

@@ -70,6 +70,7 @@ Example:
 | `align with april tag <number>` | `align with april tag #4` | Spins (in the same fast/slow pulse pattern as target lock) to search for that specific AprilTag ID, then turns to face it. Also accepts `align to april tag 4` (with or without the `#`). Gives up after a few seconds if the tag is never found, so a missing tag can't stall the rest of the script. |
 | `align with april tag <number> and go to it` | `align with april tag 1 and go to it` | Spins to search for that specific AprilTag ID (same as `align with april tag`), then drives at it until it's about 1 meter away - fast while there's real ground to cover, slowing down within 2 meters of the tag so the final approach doesn't come in too hot to fine-tune alignment. While still approaching, it aims at the tag's center and nudges sideways toward square; once stopped, it switches to correcting squareness by rotating and centering by strafing directly, rather than only aiming at the tag's center. "Centered" is judged from the tag's own pose, not just yaw, against targets measured on the actual robot (the camera isn't mounted perfectly square/centered, so dead-on doesn't read as exactly 180°/0). Gives up after a few seconds if it never gets there, so a missing tag can't stall the rest of the script. Tunable in `AutoConstants` (`kLineUp*`). Also accepts `align to april tag <number> and go to it`. |
 | `recenter` | `recenter` | Same as button 7 - makes wherever the robot is currently facing the new "forward" for field-centric driving. Doesn't move the robot or change its tracked field position, just which way "forward" points from then on for any `drive`/`drive toward`/`drive away` steps after it. |
+| `vision rotation test` | `vision rotation test` | A diagnostic step, not a real match instruction - see [Vision rotation test](#vision-rotation-test) below. Usually the only thing in the script while it's there, since it doesn't return control until it's completely done. |
 
 A line that's blank, or starts with `#` or `//` (leading whitespace is fine), is a comment and is
 skipped — handy for disabling a step without deleting it.
@@ -91,6 +92,39 @@ script only controls direction/distance/angle/tag ID, not speed.
 New instruction types are added in [`AutoScript.java`](src/main/java/frc/robot/AutoScript.java)
 (the text parser) and [`AutoStep.java`](src/main/java/frc/robot/AutoStep.java) (the parsed data),
 with the actual robot behavior for each wired up in `RobotContainer.autoStepCommand()`.
+
+#### Vision rotation test
+
+The `vision rotation test` instruction is a diagnostic for finding how fast the robot can spin
+while still reliably seeing AprilTags. Set the field up with tags visible from wherever the robot
+starts, put `vision rotation test` in `autonomous.json`, then run autonomous like normal (a match
+isn't needed - works fine standalone in the autonomous period).
+
+It runs a series of full 360° rotations, each faster than the last, counting how many *unique*
+tag IDs came into view during each one, logging the duration and count to the RioLog console
+after every rotation. All other routine console logging (target lock, "April Tags in view",
+etc.) is silenced for the whole test so only these result lines show up - restored automatically
+once the test ends, however it ends:
+
+1. **Steady-speed sequences** — spin at one constant rate, starting at 0.5 rad/s (0.1 turned out
+   to be too far below the wheels' static friction threshold to actually move at all). As long as
+   the tag count doesn't drop from the previous sequence, repeats with the speed increased by
+   another 0.1 rad/s. Once it drops (or the speed maxes out at the drivetrain's actual top turn
+   rate), moves on to...
+2. **Pulse sequences** — same idea, but spinning in target lock's fast/slow pulse pattern instead
+   of one steady rate, starting at 1.0 rad/s fast / 0.5 rad/s slow and increasing both by 0.5/0.1
+   rad/s each time. Ends the whole test once the tag count drops here too (or the fast speed maxes
+   out).
+
+The console logs a line the instant each sequence starts, not just once it finishes, so it's
+clear the test is progressing even during a slow rotation. Once the whole test ends (either way),
+it logs the single best sequence seen across the entire run - whichever one saw the most unique
+tags, using duration as a tiebreaker if more than one sequence tied for the top tag count. Before
+every measured rotation, the robot first spins slowly until no tag is in view (or 10 seconds pass,
+in case a tag's visible from every angle), so each measurement starts from the same clean state.
+All the starting
+speeds/increments are tunable in `RotationTestConstants` in
+[`Constants.java`](src/main/java/frc/robot/Constants.java).
 
 ## Driver-feel details
 
