@@ -141,10 +141,15 @@ public final class Constants {
     public static final double kLineUpNearApproachSpeedMps = 0.5;
     public static final double kLineUpNearDistanceMeters = 2.0;
 
-    // Speed (m/s) for "drive toward target"/"drive away from target" - both the autonomous steps
-    // and their held teleop equivalents (buttons 8/9). Doubled from kLineUpNearApproachSpeedMps's
-    // old shared value (0.5) since these steps aren't doing fine precision work like "align with
-    // april tag ... and go to it" is - see kLineUpNearApproachSpeedMps's own comment.
+    // Speed (m/s) for the autonomous "drive toward target" step only - 1.0 m/s (see
+    // kDriveTowardAwaySpeedMps below) was too fast in automated mode for this one specifically.
+    public static final double kAutoDriveTowardSpeedMps = 0.7;
+
+    // Speed (m/s) for every other drive toward/away situation: buttons 8/9's held teleop
+    // equivalents (both directions), and the autonomous "drive away from target" step. Doubled
+    // from kLineUpNearApproachSpeedMps's old shared value (0.5) since these aren't doing fine
+    // precision work like "align with april tag ... and go to it" is - see
+    // kLineUpNearApproachSpeedMps's own comment.
     public static final double kDriveTowardAwaySpeedMps = 1.0;
 
     // While still far out, aiming at the tag's center normally allows up to the drivetrain's

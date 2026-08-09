@@ -547,7 +547,7 @@ public class RobotContainer {
    * visible. See {@link #driveWithVisionCorrectionCommand} for the shared details.
    */
   private Command driveTowardTargetCommand(double distanceMeters) {
-    return driveWithVisionCorrectionCommand(-AutoConstants.kDriveTowardAwaySpeedMps, distanceMeters);
+    return driveWithVisionCorrectionCommand(-AutoConstants.kAutoDriveTowardSpeedMps, distanceMeters);
   }
 
   /**
