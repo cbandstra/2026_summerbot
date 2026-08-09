@@ -136,7 +136,7 @@ public final class Constants {
     public static final double kAutoAlignTimeoutSeconds = 5.0;
 
     // "Find id <n> and line up with it" stops driving once this close (meters) to the tag.
-    public static final double kLineUpDistanceMeters = 1.0;
+    public static final double kLineUpDistanceMeters = 1.25;
 
     // How close (meters) to kLineUpDistanceMeters counts as "close enough" to finish the step.
     public static final double kLineUpDistanceToleranceMeters = 0.1;
@@ -149,7 +149,7 @@ public final class Constants {
     // would have also sped up this precision final-approach/squaring phase).
     public static final double kLineUpFarApproachSpeedMps = 2.0;
     public static final double kLineUpNearApproachSpeedMps = 0.5;
-    public static final double kLineUpNearDistanceMeters = 2.0;
+    public static final double kLineUpNearDistanceMeters = 2.25;
 
     // Speed (m/s) for the autonomous "drive toward target" step only. Separate from
     // kDriveTowardAwaySpeedMps below (used by everything else) - sharing that one's faster
@@ -291,5 +291,62 @@ public final class Constants {
     public static final double kPulseFastSpeedIncrementRadPerSec = 0.5;
     public static final double kPulseSlowSpeedStartRadPerSec = 0.5;
     public static final double kPulseSlowSpeedIncrementRadPerSec = 0.1;
+  }
+
+  /**
+   * Tuning for {@link frc.robot.subsystems.TractionControl} - an "electronic limited slip
+   * differential" applied to every drive command (teleop, buttons, and autonomous alike - see
+   * CommandSwerveDrivetrain.setControl()), backing off commanded speed when a wheel or the whole
+   * chassis isn't actually achieving what was asked of it, almost always because a wheel lost
+   * traction and is just spinning rather than the drivetrain genuinely being too slow.
+   */
+  public static class TractionConstants {
+    // How far a wheel's actual speed (m/s) can exceed its own commanded target before it's
+    // judged to be slipping - e.g. 1.15 = 15% over target. Compared only against that same
+    // wheel's own target, never against the other wheels - swerve wheels are supposed to run at
+    // different speeds during any turn, that's normal kinematics, not slip. Every drive request
+    // in this project uses open-loop voltage control (DriveRequestType.OpenLoopVoltage), which
+    // means a slipping wheel actually free-spins well past its commanded target instead of being
+    // held to it - exactly the signature this looks for. A wheel accelerating normally toward
+    // its target lags BEHIND it instead, so ordinary speed changes don't trip this. Lowered from
+    // 1.3 (2026-08-09) - the correction wasn't reacting soon enough to a fast wheel outrunning a
+    // slower one.
+    public static final double kTranslationSlipRatio = 1.15;
+
+    // Below this commanded module speed (m/s), a slip ratio is too noisy to judge reliably
+    // (small numbers exaggerate the ratio) - skip the translation check entirely for that wheel.
+    public static final double kMinModuleSpeedMps = 0.3;
+
+    // Once a wheel's judged to be slipping, its target-to-actual speed ratio is multiplied by
+    // this before being applied - deliberately cutting harder than the bare minimum needed to
+    // match the slipping wheel's own ratio, so it backs off decisively instead of barely
+    // trimming it (2026-08-09 - a straight ratio match wasn't aggressive enough).
+    public static final double kTranslationCorrectionAggressiveness = 0.7;
+
+    // However badly a wheel looks like it's slipping, never scale commanded translation speed
+    // down below this fraction - a floor so one noisy reading can't stall the drivetrain outright.
+    // Lowered from 0.3 (2026-08-09) alongside the more aggressive correction above, so severe
+    // slip can actually be cut down further instead of hitting this floor too early.
+    public static final double kMinTranslationCorrectionScale = 0.15;
+
+    // How far the gyro's actual yaw rate can lag the commanded rotational rate before it's
+    // judged to be rotational slip - e.g. 0.5 = achieving less than half of what was commanded.
+    // Checked against the Pigeon's own measured angular velocity (ground truth, independent of
+    // the wheel encoders odometry itself is built from) - odometry can't catch slip in its own
+    // inputs.
+    public static final double kRotationSlipRatio = 0.5;
+
+    // Below this commanded rotational rate (rad/s), the lag check is skipped - not enough
+    // commanded rotation to meaningfully judge slip either way.
+    public static final double kMinRotationRadPerSec = 0.5;
+
+    // A normal spin-up ALSO briefly lags the commanded rate, same signature as real slip -
+    // unlike the translation check, this one needs a debounce so ordinary acceleration isn't
+    // mistaken for slip. The lag has to persist this long before it counts as real.
+    public static final double kRotationSlipDebounceSeconds = 0.2;
+
+    // Once rotational slip is confirmed, the commanded rotational rate is multiplied by this -
+    // backing off instead of continuing to fight wheels that are already spinning uselessly.
+    public static final double kRotationCorrectionScale = 0.6;
   }
 }

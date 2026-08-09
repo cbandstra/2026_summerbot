@@ -141,6 +141,33 @@ These are all tunable in [`Constants.java`](src/main/java/frc/robot/Constants.ja
 - **Input smoothing** — a slew-rate limiter on each axis filters flight-stick pot noise to stop
   steer-motor chatter.
 
+## Traction control
+
+Every drive command - teleop stick driving, buttons 8/9/10, and every autonomous step - passes
+through an "electronic limited slip differential" (`TractionControl`, applied centrally in
+`CommandSwerveDrivetrain.setControl()`, not wired up separately at each call site) that backs off
+commanded speed when a wheel or the whole chassis isn't actually achieving what was asked of it -
+almost always because a wheel lost traction and is just spinning, rather than the drivetrain
+genuinely being too slow. Two independent checks:
+
+- **Per-wheel (translation)** — each wheel's actual measured speed is compared only against its
+  own last commanded target, never against the other wheels (swerve wheels are supposed to run at
+  different speeds during any turn - that's normal kinematics, not slip). If a wheel's actual
+  speed exceeds its own target by more than `kTranslationSlipRatio`, the whole commanded
+  translation speed is scaled down by that wheel's ratio times `kTranslationCorrectionAggressiveness`
+  (cutting harder than the bare minimum needed to match the slipping wheel), floored at
+  `kMinTranslationCorrectionScale` so one noisy reading can't stall the drivetrain outright.
+- **Whole-chassis (rotation)** — the Pigeon 2's actual measured yaw rate (ground truth, independent
+  of the wheel encoders odometry itself is built from) is compared against the commanded
+  rotational rate. If it's persistently (`kRotationSlipDebounceSeconds` - long enough to rule out
+  ordinary spin-up, which also briefly lags the commanded rate) behind by more than
+  `kRotationSlipRatio`, the commanded rotational rate is scaled down by `kRotationCorrectionScale`.
+
+All tunable in `TractionConstants` in
+[`Constants.java`](src/main/java/frc/robot/Constants.java). Doesn't apply to `Idle`,
+`SwerveDriveBrake`, or the SysId characterization requests - only the `FieldCentric`/`RobotCentric`
+requests used for actual driving.
+
 ## Vision
 
 A single PhotonVision camera (named **`OV9281_April_Tags`** in the PhotonVision UI) provides
@@ -172,7 +199,8 @@ match radio bandwidth is limited and shared with everything else the robot sends
 | [`AutoStep.java`](src/main/java/frc/robot/AutoStep.java) | The parsed autonomous instruction types. |
 | [`deploy/autonomous.json`](src/main/deploy/autonomous.json) | The autonomous script itself — edit this, not code. |
 | [`subsystems/Vision.java`](src/main/java/frc/robot/subsystems/Vision.java) | PhotonVision camera wrapper. |
-| [`subsystems/CommandSwerveDrivetrain.java`](src/main/java/frc/robot/subsystems/CommandSwerveDrivetrain.java) | CTRE swerve drivetrain. |
+| [`subsystems/CommandSwerveDrivetrain.java`](src/main/java/frc/robot/subsystems/CommandSwerveDrivetrain.java) | CTRE swerve drivetrain - also where traction control is applied (`setControl()`). |
+| [`subsystems/TractionControl.java`](src/main/java/frc/robot/subsystems/TractionControl.java) | Per-wheel and whole-chassis slip correction - see [Traction control](#traction-control) above. |
 | [`generated/TunerConstants.java`](src/main/java/frc/robot/generated/TunerConstants.java) | Swerve hardware config (CAN IDs, gear ratios, offsets). |
 | [`Robot.java`](src/main/java/frc/robot/Robot.java) | Mode lifecycle + scheduler. |
 

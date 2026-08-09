@@ -7,6 +7,7 @@ import java.util.function.Supplier;
 
 import com.ctre.phoenix6.SignalLogger;
 import com.ctre.phoenix6.Utils;
+import com.ctre.phoenix6.swerve.SwerveDrivetrain.SwerveDriveState;
 import com.ctre.phoenix6.swerve.SwerveDrivetrainConstants;
 import com.ctre.phoenix6.swerve.SwerveModuleConstants;
 import com.ctre.phoenix6.swerve.SwerveRequest;
@@ -114,6 +115,10 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
     /* The SysId routine to test */
     private SysIdRoutine m_sysIdRoutineToApply = m_sysIdRoutineTranslation;
 
+    /* Backs off commanded speed when a wheel or the chassis isn't achieving what was asked of
+     * it - see setControl() below and TractionControl's own javadoc. */
+    private final TractionControl m_tractionControl = new TractionControl();
+
     /**
      * Constructs a CTRE SwerveDrivetrain using the specified constants.
      * <p>
@@ -198,6 +203,43 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
      */
     public Command applyRequest(Supplier<SwerveRequest> request) {
         return run(() -> this.setControl(request.get()));
+    }
+
+    /**
+     * Applies traction control (see {@link TractionControl}) to every {@link
+     * SwerveRequest.FieldCentric}/{@link SwerveRequest.RobotCentric} request - the two types
+     * used for every actual drive command in this project (teleop, buttons, and autonomous
+     * alike) - before handing off to the normal control pipeline. Other request types (Idle,
+     * SwerveDriveBrake, the SysId characterization requests) don't command a wheel speed and
+     * pass through untouched - SysId in particular needs its raw, uncorrected voltage ramps to
+     * produce valid characterization data.
+     */
+    @Override
+    public void setControl(SwerveRequest request) {
+        if (request instanceof SwerveRequest.FieldCentric fieldCentric) {
+            SwerveDriveState state = getState();
+            double[] vxy = m_tractionControl.correctTranslation(fieldCentric.VelocityX,
+                fieldCentric.VelocityY, state.ModuleStates, state.ModuleTargets);
+            fieldCentric.VelocityX = vxy[0];
+            fieldCentric.VelocityY = vxy[1];
+            fieldCentric.RotationalRate = m_tractionControl.correctRotation(
+                fieldCentric.RotationalRate, actualAngularRateRadPerSec());
+        } else if (request instanceof SwerveRequest.RobotCentric robotCentric) {
+            SwerveDriveState state = getState();
+            double[] vxy = m_tractionControl.correctTranslation(robotCentric.VelocityX,
+                robotCentric.VelocityY, state.ModuleStates, state.ModuleTargets);
+            robotCentric.VelocityX = vxy[0];
+            robotCentric.VelocityY = vxy[1];
+            robotCentric.RotationalRate = m_tractionControl.correctRotation(
+                robotCentric.RotationalRate, actualAngularRateRadPerSec());
+        }
+        super.setControl(request);
+    }
+
+    /** The gyro's actual measured yaw rate (rad/s) - ground truth for {@link TractionControl}'s
+     * rotation check, independent of the wheel encoders odometry itself is built from. */
+    private double actualAngularRateRadPerSec() {
+        return getPigeon2().getAngularVelocityZWorld().refresh().getValue().in(RadiansPerSecond);
     }
 
     /**
