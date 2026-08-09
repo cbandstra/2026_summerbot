@@ -234,10 +234,15 @@ public class RobotContainer {
     // away from the current tag. Also the only way to resume searching after target lock holds
     // still for a lost close-up tag (see kCloseTargetLossDistanceMeters below). If target lock
     // isn't already on, this turns it on hands-free (same as tapping button 2) instead of doing
-    // nothing - but only button 2 can turn it back off; this button never disables it.
+    // nothing - but only button 2 can turn it back off; this button never disables it. If target
+    // lock is currently suspended (see m_targetLockSuspended - after button 8/9 released and no
+    // tag back in view yet), pressing this clears the suspension immediately instead of waiting
+    // for a tag to reappear on its own, so it actually performs its usual force-spin search
+    // rather than silently doing nothing.
     Trigger forceSpinButton = m_driverController.button(OperatorConstants.kThrustmasterForceSpinButton);
     forceSpinButton.onTrue(Commands.runOnce(() -> {
         enableTargetLockIfOff();
+        resumeTargetLockIfSuspended("force spin button pressed");
         m_targetLockSearch.reset(drivetrain.getState().Pose.getRotation());
         m_targetLockLastDistanceMeters = Double.MAX_VALUE;
     }));
@@ -247,12 +252,13 @@ public class RobotContainer {
     // in view (even the one target lock's already aligned to) and forcing a clockwise search
     // until a tag is genuinely (re)acquired, not just while held. Once that happens it locks onto
     // that tag like normal; the NEXT time a search is needed (this tag's lost, button 3, etc.) it
-    // defaults back to counterclockwise. Also turns target lock on if it isn't already, same as
-    // button 3 above.
+    // defaults back to counterclockwise. Also turns target lock on if it isn't already, and clears
+    // a suspension the same way button 3 above does.
     Trigger forceSpinClockwiseButton =
         m_driverController.button(OperatorConstants.kThrustmasterForceSpinClockwiseButton);
     forceSpinClockwiseButton.onTrue(Commands.runOnce(() -> {
         enableTargetLockIfOff();
+        resumeTargetLockIfSuspended("force spin clockwise button pressed");
         m_targetLockSearch.reset(drivetrain.getState().Pose.getRotation());
         m_targetLockLastDistanceMeters = Double.MAX_VALUE;
         m_forcingClockwiseUntilFound = true;
@@ -357,10 +363,8 @@ public class RobotContainer {
             RobotLog.log("Target lock: suspended (drive button released) until a tag's in view");
         }
     };
-    new Trigger(() -> m_targetLockSuspended && vision.hasTarget()).onTrue(Commands.runOnce(() -> {
-        m_targetLockSuspended = false;
-        RobotLog.log("Target lock: resumed (tag back in view)");
-    }));
+    new Trigger(() -> m_targetLockSuspended && vision.hasTarget())
+        .onTrue(Commands.runOnce(() -> resumeTargetLockIfSuspended("tag back in view")));
 
     // Button 8: held equivalent of the "drive toward target" autonomous step - drives forward,
     // correcting aim toward whichever AprilTag's in view, for as long as it's held (instead of a
@@ -405,6 +409,19 @@ public class RobotContainer {
     if (!m_targetLockToggleOn) {
         m_targetLockToggleOn = true;
         RobotLog.log("Target lock: ON (auto-enabled by force spin button)");
+    }
+  }
+
+  /**
+   * Clears a target lock suspension (see {@link #m_targetLockSuspended}) immediately instead of
+   * waiting for a tag to naturally come back into view - used by the force spin buttons so
+   * pressing one while suspended actually performs its usual search instead of silently doing
+   * nothing (the main target lock trigger requires {@code !m_targetLockSuspended} to run at all).
+   */
+  private void resumeTargetLockIfSuspended(String reason) {
+    if (m_targetLockSuspended) {
+        m_targetLockSuspended = false;
+        RobotLog.log("Target lock: resumed (" + reason + ")");
     }
   }
 

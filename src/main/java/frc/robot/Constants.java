@@ -147,7 +147,7 @@ public final class Constants {
     // kAutoDriveSpeedMps, which is used by the plain drive/align steps instead. Deliberately NOT
     // shared with kDriveTowardAwaySpeedMps below (used to be, until doubling that one for speed
     // would have also sped up this precision final-approach/squaring phase).
-    public static final double kLineUpFarApproachSpeedMps = 2.5;
+    public static final double kLineUpFarApproachSpeedMps = 2.0;
     public static final double kLineUpNearApproachSpeedMps = 0.5;
     public static final double kLineUpNearDistanceMeters = 2.0;
 
