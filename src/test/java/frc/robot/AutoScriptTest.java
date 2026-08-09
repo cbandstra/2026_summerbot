@@ -101,6 +101,12 @@ class AutoScriptTest {
   }
 
   @Test
+  void recenter() {
+    AutoScript.parseLine("recenter");
+    AutoScript.parseLine("RECENTER");
+  }
+
+  @Test
   void isCaseInsensitive() {
     var step = (AutoStep.Drive) AutoScript.parseLine("DRIVE FORWARD 3 FEET");
     assertEquals(AutoStep.Direction.FORWARD, step.direction());

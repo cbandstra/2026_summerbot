@@ -46,6 +46,7 @@ public final class AutoScript {
   private static final Pattern LINE_UP_TAG = Pattern.compile(
       "align\\s+(?:with|to)\\s+april\\s*tag\\s+#?(\\d+)\\s+and\\s+go\\s+to\\s+it",
       Pattern.CASE_INSENSITIVE);
+  private static final Pattern RECENTER = Pattern.compile("recenter", Pattern.CASE_INSENSITIVE);
 
   private AutoScript() {}
 
@@ -133,6 +134,11 @@ public final class AutoScript {
     Matcher lineUpTag = LINE_UP_TAG.matcher(line);
     if (lineUpTag.matches()) {
       return new AutoStep.LineUpTag(Integer.parseInt(lineUpTag.group(1)));
+    }
+
+    Matcher recenter = RECENTER.matcher(line);
+    if (recenter.matches()) {
+      return new AutoStep.Recenter();
     }
 
     throw new IllegalArgumentException("don't understand instruction \"" + line + "\"");

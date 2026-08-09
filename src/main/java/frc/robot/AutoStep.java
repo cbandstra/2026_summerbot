@@ -32,4 +32,10 @@ public sealed interface AutoStep {
 
   /** Search for a specific AprilTag ID, then drive up to and center on it. */
   record LineUpTag(int tagId) implements AutoStep {}
+
+  /**
+   * Same as button 7 - makes wherever the robot is currently facing the new "forward" for
+   * field-centric driving. Doesn't move the robot or touch its tracked field position.
+   */
+  record Recenter() implements AutoStep {}
 }

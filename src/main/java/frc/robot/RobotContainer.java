@@ -518,6 +518,9 @@ public class RobotContainer {
         return alignToTagCommand(alignTag.tagId());
     } else if (step instanceof AutoStep.LineUpTag lineUpTag) {
         return lineUpToTagCommand(lineUpTag.tagId());
+    } else if (step instanceof AutoStep.Recenter) {
+        // Same as button 7 - see its own binding in configureBindings().
+        return Commands.runOnce(drivetrain::seedFieldCentric, drivetrain);
     }
     throw new IllegalStateException("Unhandled AutoStep: " + step);
   }

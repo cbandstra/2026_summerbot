@@ -13,6 +13,7 @@
   "wait 1 seconds",
   "drive away from target 3 feet",
   "rotate 330 degrees counterclockwise",
+  "recenter",
 
   "// --- Reference: every supported instruction (see README.md); # stands in for a number ---",
   "// drive forward # feet",
@@ -25,5 +26,6 @@
   "// rotate # degrees clockwise",
   "// wait # seconds",
   "// align with april tag #",
-  "// align with april tag # and go to it"
+  "// align with april tag # and go to it",
+  "// recenter"
 ]
