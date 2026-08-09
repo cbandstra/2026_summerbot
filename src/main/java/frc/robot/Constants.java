@@ -101,7 +101,7 @@ public final class Constants {
 
   public static class AutoConstants {
     // Speed used for every scripted "drive" step. Slow on purpose for testing.
-    public static final double kAutoDriveSpeedMps = 1.0;
+    public static final double kAutoDriveSpeedMps = 1.5;
 
     // Spin rate (rad/s) used for every scripted "rotate" step. Only affects the plain "rotate #
     // degrees" instruction - "align with april tag" and "align with april tag ... and go to it"
@@ -147,7 +147,7 @@ public final class Constants {
     // kAutoDriveSpeedMps, which is used by the plain drive/align steps instead. Deliberately NOT
     // shared with kDriveTowardAwaySpeedMps below (used to be, until doubling that one for speed
     // would have also sped up this precision final-approach/squaring phase).
-    public static final double kLineUpFarApproachSpeedMps = 1.5;
+    public static final double kLineUpFarApproachSpeedMps = 2.5;
     public static final double kLineUpNearApproachSpeedMps = 0.5;
     public static final double kLineUpNearDistanceMeters = 2.0;
 
