@@ -594,26 +594,23 @@ public class RobotContainer {
   }
 
   /**
-   * How fast (m/s) button 8 (drive toward locked target) should currently drive, in 5 distance
-   * tiers - see {@link AutoConstants#kDriveTowardFarDistanceMeters}'s javadoc for the full
-   * breakdown. No tag in view (distance unknown) uses the closest tier's speed.
+   * How fast (m/s) button 8 (drive toward locked target) should currently drive: scales directly
+   * with distance to the tag ({@link AutoConstants#kDriveTowardMinSpeedMps} + distanceMeters *
+   * gain), using {@link AutoConstants#kDriveTowardFarGain} past {@link
+   * AutoConstants#kDriveTowardNearDistanceMeters} away or {@link AutoConstants#kDriveTowardNearGain}
+   * closer than that, capped at {@link AutoConstants#kDriveTowardMaxSpeedPercent} of the
+   * drivetrain's true top speed. No tag in view (distance unknown) uses the floor speed.
    */
   private double driveTowardHeldSpeedMps() {
     if (!vision.hasTarget()) {
-        return AutoConstants.kDriveTowardVeryCloseSpeedMps;
+        return AutoConstants.kDriveTowardMinSpeedMps;
     }
     double distanceMeters = vision.getTargetDistanceMeters();
-    if (distanceMeters > AutoConstants.kDriveTowardFarDistanceMeters) {
-        return AutoConstants.kDriveTowardFastSpeedMps;
-    } else if (distanceMeters > AutoConstants.kDriveTowardMidDistanceMeters) {
-        return AutoConstants.kDriveTowardBriskSpeedMps;
-    } else if (distanceMeters > AutoConstants.kDriveTowardNearDistanceMeters) {
-        return AutoConstants.kDriveTowardModerateSpeedMps;
-    } else if (distanceMeters > AutoConstants.kDriveTowardVeryNearDistanceMeters) {
-        return AutoConstants.kDriveTowardCloseSpeedMps;
-    } else {
-        return AutoConstants.kDriveTowardVeryCloseSpeedMps;
-    }
+    double gain = distanceMeters > AutoConstants.kDriveTowardNearDistanceMeters
+        ? AutoConstants.kDriveTowardFarGain
+        : AutoConstants.kDriveTowardNearGain;
+    double speedMps = AutoConstants.kDriveTowardMinSpeedMps + distanceMeters * gain;
+    return Math.min(speedMps, kMaxSpeedMps * AutoConstants.kDriveTowardMaxSpeedPercent);
   }
 
   /**

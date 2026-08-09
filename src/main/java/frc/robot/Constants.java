@@ -161,25 +161,20 @@ public final class Constants {
     // approach needed to be slower (0.7) without also slowing this back down.
     public static final double kDriveTowardAwaySpeedMps = 1.0;
 
-    // Button 8 (drive toward locked target) scales its speed by distance to the tag instead of
-    // one fixed number, in 5 tiers from farthest to closest: farther than
-    // kDriveTowardFarDistanceMeters uses kDriveTowardFastSpeedMps; down to kDriveTowardMidDistanceMeters
-    // uses kDriveTowardBriskSpeedMps; down to kDriveTowardNearDistanceMeters uses
-    // kDriveTowardModerateSpeedMps; down to kDriveTowardVeryNearDistanceMeters uses
-    // kDriveTowardCloseSpeedMps; and closer than that (or no tag in view - lost sight of a tag
-    // this close is almost certainly because it's right in front of the camera, not because it's
-    // actually gone) uses kDriveTowardVeryCloseSpeedMps. Added a 4th tier (2026-08-09) - dropping
-    // straight from fast to moderate at one threshold didn't leave enough room to actually slow
-    // down before reaching the tag - then a 5th (same day) for the same reason, one tier closer in.
-    public static final double kDriveTowardFarDistanceMeters = 2.0;
-    public static final double kDriveTowardMidDistanceMeters = 1.5;
-    public static final double kDriveTowardNearDistanceMeters = 1.0;
-    public static final double kDriveTowardVeryNearDistanceMeters = 0.4;
-    public static final double kDriveTowardFastSpeedMps = 3.5;
-    public static final double kDriveTowardBriskSpeedMps = 2.0;
-    public static final double kDriveTowardModerateSpeedMps = 1.5;
-    public static final double kDriveTowardCloseSpeedMps = 1.00;
-    public static final double kDriveTowardVeryCloseSpeedMps = 0.6;
+    // Button 8 (drive toward locked target) scales its speed directly with distance to the tag:
+    // speed = kDriveTowardMinSpeedMps + distanceMeters * gain, where gain is
+    // kDriveTowardFarGain past kDriveTowardNearDistanceMeters away or kDriveTowardNearGain closer
+    // than that (or no tag in view yet, using kDriveTowardMinSpeedMps outright since distance
+    // isn't known) - a single gain felt wrong across the whole range at once, so it's now two
+    // (2026-08-09). Floored at kDriveTowardMinSpeedMps (never too slow to move) and capped at
+    // kDriveTowardMaxSpeedPercent of the drivetrain's true top speed (RobotContainer's
+    // kMaxSpeedMps, ~5.85 m/s at 12V - a fraction of that rather than a flat m/s number so it
+    // stays proportionate if the drivetrain's actual top speed ever changes).
+    public static final double kDriveTowardMinSpeedMps = 0.6;
+    public static final double kDriveTowardNearDistanceMeters = 2.0;
+    public static final double kDriveTowardNearGain = 0.7;
+    public static final double kDriveTowardFarGain = 1.0;
+    public static final double kDriveTowardMaxSpeedPercent = 0.9;
 
     // Button 9's (drive away from locked target) one fixed backward speed. Separate from
     // kDriveTowardModerateSpeedMps above (2026-08-09) - they used to be shared, but button 9's
