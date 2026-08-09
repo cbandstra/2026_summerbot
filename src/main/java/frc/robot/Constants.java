@@ -24,8 +24,8 @@ public final class Constants {
     public static final int kThrustmasterRecenterButton = 7;
     public static final int kThrustmasterForceSpinButton = 3;
     public static final int kThrustmasterForceSpinClockwiseButton = 4;
-    public static final int kThrustmasterDriveAwayFromLockedTargetButton = 8;
-    public static final int kThrustmasterDriveTowardLockedTargetButton = 9;
+    public static final int kThrustmasterDriveAwayFromLockedTargetButton = 9;
+    public static final int kThrustmasterDriveTowardLockedTargetButton = 8;
     public static final int kThrustmasterLineUpLockedTargetButton = 10;
 
     // A press shorter than this toggles target lock on/off. A press this long or longer acts
@@ -156,12 +156,41 @@ public final class Constants {
     // 1.0 m/s was too fast for this specific step in automated mode.
     public static final double kAutoDriveTowardSpeedMps = 0.7;
 
-    // Speed (m/s) for every other drive toward/away situation: buttons 8/9's held teleop
-    // equivalents (both directions), and the autonomous "drive away from target" step. Doubled
-    // from kLineUpNearApproachSpeedMps's old shared value (0.5) since these aren't doing fine
-    // precision work like "align with april tag ... and go to it" is - see
-    // kLineUpNearApproachSpeedMps's own comment.
+    // Speed (m/s) for the autonomous "drive away from target" step only. Separate from
+    // kDriveTowardCloseSpeedMps below (2026-08-09) - they used to be shared, but button 8's close
+    // approach needed to be slower (0.7) without also slowing this back down.
     public static final double kDriveTowardAwaySpeedMps = 1.0;
+
+    // Button 8 (drive toward locked target) scales its speed by distance to the tag instead of
+    // one fixed number, in 5 tiers from farthest to closest: farther than
+    // kDriveTowardFarDistanceMeters uses kDriveTowardFastSpeedMps; down to kDriveTowardMidDistanceMeters
+    // uses kDriveTowardBriskSpeedMps; down to kDriveTowardNearDistanceMeters uses
+    // kDriveTowardModerateSpeedMps; down to kDriveTowardVeryNearDistanceMeters uses
+    // kDriveTowardCloseSpeedMps; and closer than that (or no tag in view - lost sight of a tag
+    // this close is almost certainly because it's right in front of the camera, not because it's
+    // actually gone) uses kDriveTowardVeryCloseSpeedMps. Added a 4th tier (2026-08-09) - dropping
+    // straight from fast to moderate at one threshold didn't leave enough room to actually slow
+    // down before reaching the tag - then a 5th (same day) for the same reason, one tier closer in.
+    public static final double kDriveTowardFarDistanceMeters = 2.0;
+    public static final double kDriveTowardMidDistanceMeters = 1.5;
+    public static final double kDriveTowardNearDistanceMeters = 1.0;
+    public static final double kDriveTowardVeryNearDistanceMeters = 0.4;
+    public static final double kDriveTowardFastSpeedMps = 3.5;
+    public static final double kDriveTowardBriskSpeedMps = 2.0;
+    public static final double kDriveTowardModerateSpeedMps = 1.5;
+    public static final double kDriveTowardCloseSpeedMps = 1.00;
+    public static final double kDriveTowardVeryCloseSpeedMps = 0.6;
+
+    // Button 9's (drive away from locked target) one fixed backward speed. Separate from
+    // kDriveTowardModerateSpeedMps above (2026-08-09) - they used to be shared, but button 9's
+    // backup speed needed to be faster without also speeding up button 8's mid-range tier.
+    public static final double kDriveTowardBackupSpeedMps = 1.5;
+
+    // Caps how fast the commanded forward/backward speed is allowed to change (m/s per second)
+    // for "drive toward target"/"drive away from target" (both the autonomous steps and buttons
+    // 8/9's held equivalents) - jumping straight to the target speed from a stop was spinning the
+    // wheels (2026-08-09). Same ~1 second ramp-to-top-speed as kLineUpTranslationSlewMpsPerSec.
+    public static final double kDriveTowardSlewMpsPerSec = 2.5;
 
     // While still far out, aiming at the tag's center normally allows up to the drivetrain's
     // full turn speed (kMaxAngularRate) - but a big initial yaw error right after the search

@@ -9,6 +9,7 @@ import static edu.wpi.first.units.Units.MetersPerSecond;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.DoubleSupplier;
 import java.util.function.Supplier;
 
 import org.photonvision.targeting.PhotonTrackedTarget;
@@ -361,10 +362,10 @@ public class RobotContainer {
         RobotLog.log("Target lock: resumed (tag back in view)");
     }));
 
-    // Button 9: held equivalent of the "drive toward target" autonomous step - drives forward,
+    // Button 8: held equivalent of the "drive toward target" autonomous step - drives forward,
     // correcting aim toward whichever AprilTag's in view, for as long as it's held (instead of a
     // fixed distance) - ignoring the stick the whole time, same as every other button here that
-    // takes over the drivetrain. Takes priority over buttons 8 and 10 if more than one is held
+    // takes over the drivetrain. Takes priority over buttons 9 and 10 if more than one is held
     // (see their own triggers).
     //
     // If target lock is on when released, it doesn't just resume immediately - it's suspended
@@ -374,10 +375,10 @@ public class RobotContainer {
     driveTowardLockedTargetButton.onFalse(Commands.runOnce(suspendTargetLockIfOn));
     driveTowardLockedTargetButton.whileTrue(driveTowardTargetHeldCommand());
 
-    // Button 8: held equivalent of the "drive away from target" autonomous step - same as button
-    // 9 but backward. Excludes whenever button 9 is also held so button 9 always wins if both are
+    // Button 9: held equivalent of the "drive away from target" autonomous step - same as button
+    // 8 but backward. Excludes whenever button 8 is also held so button 8 always wins if both are
     // pressed (driving toward and away at once doesn't make sense). Same target-lock suspend
-    // behavior on release as button 9.
+    // behavior on release as button 8.
     Trigger driveAwayEffectiveButton = new Trigger(() -> driveAwayLockedTargetButton.getAsBoolean()
         && !driveTowardLockedTargetButton.getAsBoolean());
     driveAwayEffectiveButton.onFalse(Commands.runOnce(suspendTargetLockIfOn));
@@ -568,7 +569,7 @@ public class RobotContainer {
    * visible. See {@link #driveWithVisionCorrectionCommand} for the shared details.
    */
   private Command driveTowardTargetCommand(double distanceMeters) {
-    return driveWithVisionCorrectionCommand(-AutoConstants.kAutoDriveTowardSpeedMps, distanceMeters);
+    return driveWithVisionCorrectionCommand(() -> -AutoConstants.kAutoDriveTowardSpeedMps, distanceMeters);
   }
 
   /**
@@ -579,44 +580,72 @@ public class RobotContainer {
    * even while backing away from it - see {@link #driveWithVisionCorrectionCommand}.
    */
   private Command driveAwayFromTargetCommand(double distanceMeters) {
-    return driveWithVisionCorrectionCommand(AutoConstants.kDriveTowardAwaySpeedMps, distanceMeters);
+    return driveWithVisionCorrectionCommand(() -> AutoConstants.kDriveTowardAwaySpeedMps, distanceMeters);
   }
 
   /**
-   * Button 9's held equivalent of "drive toward target": drives forward, correcting aim toward
+   * Button 8's held equivalent of "drive toward target": drives forward, correcting aim toward
    * whichever AprilTag is in view, for as long as the button stays held instead of a fixed
-   * distance - see {@link #driveWithVisionCorrectionCommand}.
+   * distance. Unlike every other user of {@link #driveWithVisionCorrectionCommand}, the speed
+   * isn't fixed - see {@link #driveTowardHeldSpeedMps}.
    */
   private Command driveTowardTargetHeldCommand() {
-    return driveWithVisionCorrectionCommand(-AutoConstants.kDriveTowardAwaySpeedMps, 0);
+    return driveWithVisionCorrectionCommand(() -> -driveTowardHeldSpeedMps(), 0);
   }
 
   /**
-   * Button 8's held equivalent of "drive away from target": drives backward, correcting aim
+   * How fast (m/s) button 8 (drive toward locked target) should currently drive, in 5 distance
+   * tiers - see {@link AutoConstants#kDriveTowardFarDistanceMeters}'s javadoc for the full
+   * breakdown. No tag in view (distance unknown) uses the closest tier's speed.
+   */
+  private double driveTowardHeldSpeedMps() {
+    if (!vision.hasTarget()) {
+        return AutoConstants.kDriveTowardVeryCloseSpeedMps;
+    }
+    double distanceMeters = vision.getTargetDistanceMeters();
+    if (distanceMeters > AutoConstants.kDriveTowardFarDistanceMeters) {
+        return AutoConstants.kDriveTowardFastSpeedMps;
+    } else if (distanceMeters > AutoConstants.kDriveTowardMidDistanceMeters) {
+        return AutoConstants.kDriveTowardBriskSpeedMps;
+    } else if (distanceMeters > AutoConstants.kDriveTowardNearDistanceMeters) {
+        return AutoConstants.kDriveTowardModerateSpeedMps;
+    } else if (distanceMeters > AutoConstants.kDriveTowardVeryNearDistanceMeters) {
+        return AutoConstants.kDriveTowardCloseSpeedMps;
+    } else {
+        return AutoConstants.kDriveTowardVeryCloseSpeedMps;
+    }
+  }
+
+  /**
+   * Button 9's held equivalent of "drive away from target": drives backward, correcting aim
    * toward whichever AprilTag is in view, for as long as the button stays held instead of a
    * fixed distance - see {@link #driveWithVisionCorrectionCommand}.
    */
   private Command driveAwayFromTargetHeldCommand() {
-    return driveWithVisionCorrectionCommand(AutoConstants.kDriveTowardAwaySpeedMps, 0);
+    return driveWithVisionCorrectionCommand(() -> AutoConstants.kDriveTowardBackupSpeedMps, 0);
   }
 
   /**
    * Shared by "drive toward target" and "drive away from target": drives straight
-   * (robot-centric) at {@code vxMps}, correcting aim toward whichever AprilTag is currently
-   * best-seen (not a specific ID - simply whatever's in view) the whole time it's visible, in
-   * either direction. Once it goes out of view (e.g. the robot got too close for the camera to
-   * see the whole tag, or it fell out of view while backing away), it stops correcting and just
-   * keeps driving straight in whatever direction it was last facing for the rest of the
-   * distance, rather than searching for it. {@code distanceMeters} of 0 means no distance limit
-   * - keeps driving until the caller cancels the command (e.g. a button release), for buttons
-   * 8/9's held versions.
+   * (robot-centric) at {@code vxMpsSupplier}'s current value (re-read every loop, so it can
+   * change on the fly - see button 8's {@link #driveTowardHeldSpeedMps}), correcting aim toward
+   * whichever AprilTag is currently best-seen (not a specific ID - simply whatever's in view) the
+   * whole time it's visible, in either direction. Once it goes out of view (e.g. the robot got
+   * too close for the camera to see the whole tag, or it fell out of view while backing away), it
+   * stops correcting and just keeps driving straight in whatever direction it was last facing for
+   * the rest of the distance, rather than searching for it. {@code distanceMeters} of 0 means no
+   * distance limit - keeps driving until the caller cancels the command (e.g. a button release),
+   * for buttons 8/9's held versions. The commanded speed is ramped (see {@link
+   * AutoConstants#kDriveTowardSlewMpsPerSec}) rather than snapping straight to
+   * {@code vxMpsSupplier}'s value - jumping straight there from a stop was spinning the wheels.
    */
-  private Command driveWithVisionCorrectionCommand(double vxMps, double distanceMeters) {
+  private Command driveWithVisionCorrectionCommand(DoubleSupplier vxMpsSupplier, double distanceMeters) {
     Pose2d[] startPose = {null};
+    SlewRateLimiter vxLimiter = new SlewRateLimiter(AutoConstants.kDriveTowardSlewMpsPerSec);
     Command driveLoop = Commands.run(() -> {
         double rotationalRate = vision.hasTarget() ? computeAlignRotationalRate() : 0.0;
-        drivetrain.setControl(autoDrive.withVelocityX(vxMps).withVelocityY(0)
-            .withRotationalRate(rotationalRate));
+        drivetrain.setControl(autoDrive.withVelocityX(vxLimiter.calculate(vxMpsSupplier.getAsDouble()))
+            .withVelocityY(0).withRotationalRate(rotationalRate));
     }, drivetrain, vision);
     if (distanceMeters > 0) {
         driveLoop = driveLoop.until(() -> startPose[0].getTranslation()
@@ -626,6 +655,7 @@ public class RobotContainer {
         Commands.runOnce(() -> {
             startPose[0] = drivetrain.getState().Pose;
             m_alignRotationController.reset();
+            vxLimiter.reset(0);
         }, drivetrain),
         driveLoop,
         stopDrivetrainCommand()
