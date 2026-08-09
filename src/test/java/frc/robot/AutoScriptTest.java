@@ -113,6 +113,15 @@ class AutoScriptTest {
   }
 
   @Test
+  void playBeep() {
+    var step = (AutoStep.PlayBeep) AutoScript.parseLine("play beep 3 times");
+    assertEquals(3, step.times());
+
+    var singular = (AutoStep.PlayBeep) AutoScript.parseLine("PLAY BEEP 1 TIME");
+    assertEquals(1, singular.times());
+  }
+
+  @Test
   void isCaseInsensitive() {
     var step = (AutoStep.Drive) AutoScript.parseLine("DRIVE FORWARD 3 FEET");
     assertEquals(AutoStep.Direction.FORWARD, step.direction());

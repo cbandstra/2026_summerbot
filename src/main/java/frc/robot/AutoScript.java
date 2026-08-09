@@ -49,6 +49,8 @@ public final class AutoScript {
   private static final Pattern RECENTER = Pattern.compile("recenter", Pattern.CASE_INSENSITIVE);
   private static final Pattern VISION_ROTATION_TEST = Pattern.compile(
       "vision\\s+rotation\\s+test", Pattern.CASE_INSENSITIVE);
+  private static final Pattern PLAY_BEEP = Pattern.compile(
+      "play\\s+beep\\s+(\\d+)\\s+(?:time|times)", Pattern.CASE_INSENSITIVE);
 
   private AutoScript() {}
 
@@ -146,6 +148,11 @@ public final class AutoScript {
     Matcher visionRotationTest = VISION_ROTATION_TEST.matcher(line);
     if (visionRotationTest.matches()) {
       return new AutoStep.VisionRotationTest();
+    }
+
+    Matcher playBeep = PLAY_BEEP.matcher(line);
+    if (playBeep.matches()) {
+      return new AutoStep.PlayBeep(Integer.parseInt(playBeep.group(1)));
     }
 
     throw new IllegalArgumentException("don't understand instruction \"" + line + "\"");

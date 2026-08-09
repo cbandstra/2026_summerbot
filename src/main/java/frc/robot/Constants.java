@@ -77,12 +77,12 @@ public final class Constants {
     // autonomous step (2026-08-09): all 3 tags in the test area were reliably detected up through
     // fast=3.50/slow=0.70 rad/s, dropping to 2 by fast=4.00/slow=0.80 - these two constants are
     // set a bit below that observed failure point for margin.
-    public static final double kSearchRotationRadPerSec = 3.0;
+    public static final double kSearchRotationRadPerSec = 3.5;
 
     // How fast (rad/s) to spin during the slow phase between pulses. Slower than the fast pulse,
     // but not stopped, so the camera gets a steadier look without giving up ground entirely. See
     // kSearchRotationRadPerSec's comment - tuned from the same test run.
-    public static final double kSearchSlowRotationRadPerSec = 0.6;
+    public static final double kSearchSlowRotationRadPerSec = 0.7;
 
     // Search alternates fast/slow - it spins fast this many degrees, then spins slow for
     // kSearchSlowPhaseSeconds, then spins fast again, and so on until a tag is seen. Gives the
@@ -90,7 +90,7 @@ public final class Constants {
     public static final double kSearchSpinDegrees = 15.0;
 
     // How long (seconds) to spin at the slow rate between each fast pulse of the search spin.
-    public static final double kSearchSlowPhaseSeconds = 0.5;
+    public static final double kSearchSlowPhaseSeconds = 0.75;
 
     // If target lock loses a tag while it was closer than this (meters), the tag was probably
     // lost because the robot got too close for the camera to see the whole thing - not because
@@ -151,8 +151,9 @@ public final class Constants {
     public static final double kLineUpNearApproachSpeedMps = 0.5;
     public static final double kLineUpNearDistanceMeters = 2.0;
 
-    // Speed (m/s) for the autonomous "drive toward target" step only - 1.0 m/s (see
-    // kDriveTowardAwaySpeedMps below) was too fast in automated mode for this one specifically.
+    // Speed (m/s) for the autonomous "drive toward target" step only. Separate from
+    // kDriveTowardAwaySpeedMps below (used by everything else) - sharing that one's faster
+    // 1.0 m/s was too fast for this specific step in automated mode.
     public static final double kAutoDriveTowardSpeedMps = 0.7;
 
     // Speed (m/s) for every other drive toward/away situation: buttons 8/9's held teleop
@@ -235,9 +236,8 @@ public final class Constants {
   }
 
   /**
-   * Tuning for the "Vision rotation test" autonomous mode (a dashboard-selectable diagnostic,
-   * not part of the normal scripted autonomous.json run) - see
-   * RobotContainer.visionRotationTestCommand() for what it actually does.
+   * Tuning for the "vision rotation test" autonomous.json diagnostic step - see {@link
+   * VisionRotationTest} for what it actually does.
    */
   public static class RotationTestConstants {
     // Rotation rate (rad/s) used to spin slowly until no AprilTag is in view, run before every
@@ -252,10 +252,9 @@ public final class Constants {
 
     // Steady-speed sequences spin at one constant rate: sequence 1 uses this starting speed, and
     // each later sequence adds this increment again, for as long as the unique-tag count hasn't
-    // dropped from the previous sequence. Started at 0.1 originally, but that's only ~2% of the
-    // drivetrain's actual max turn rate - likely too far below the wheels' static friction
-    // threshold to move at all. Raised to match kClearViewRotationRadPerSec, which is confirmed
-    // to actually turn the robot.
+    // dropped from the previous sequence. Kept at or above kClearViewRotationRadPerSec - much
+    // slower than that risks landing below the wheels' static friction threshold and not moving
+    // the robot at all.
     public static final double kSteadySpeedStartRadPerSec = 0.5;
     public static final double kSteadySpeedIncrementRadPerSec = 0.1;
 

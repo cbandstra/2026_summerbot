@@ -13,8 +13,12 @@
   "drive toward target 3.0 feet",
   "wait 1 seconds",
   "drive away from target 3 feet",
-  "rotate 330 degrees counterclockwise",
   "recenter",
+  "rotate 30 degrees counterclockwise",
+  "rotate 60 degrees clockwise",
+  "rotate 60 degrees counterclockwise",
+  "rotate 30 degrees clockwise",
+  "play beep 4 times",
 
   "// --- Reference: every supported instruction (see README.md); # stands in for a number ---",
   "// drive forward # feet",
@@ -29,5 +33,6 @@
   "// align with april tag #",
   "// align with april tag # and go to it",
   "// recenter",
-  "// vision rotation test"
+  "// vision rotation test",
+  "// play beep # times"
 ]

@@ -40,8 +40,15 @@ public sealed interface AutoStep {
   record Recenter() implements AutoStep {}
 
   /**
-   * Diagnostic, not a real match step - see RobotContainer.visionRotationTestCommand() for what
-   * it actually does. Finds how fast the robot can spin while still reliably seeing AprilTags.
+   * Diagnostic, not a real match step - see {@link VisionRotationTest} for what it actually
+   * does. Finds how fast the robot can spin while still reliably seeing AprilTags.
    */
   record VisionRotationTest() implements AutoStep {}
+
+  /**
+   * Plays the same beep normally played after every autonomous step finishes (see
+   * RobotContainer.beepCommand()), {@code times} times back to back - always plays regardless of
+   * {@code AutoConstants#kStepCompleteBeepEnabled}, since the whole point of this step is to beep.
+   */
+  record PlayBeep(int times) implements AutoStep {}
 }

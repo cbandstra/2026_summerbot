@@ -71,6 +71,7 @@ Example:
 | `align with april tag <number> and go to it` | `align with april tag 1 and go to it` | Spins to search for that specific AprilTag ID (same as `align with april tag`), then drives at it until it's about 1 meter away - fast while there's real ground to cover, slowing down within 2 meters of the tag so the final approach doesn't come in too hot to fine-tune alignment. While still approaching, it aims at the tag's center and nudges sideways toward square; once stopped, it switches to correcting squareness by rotating and centering by strafing directly, rather than only aiming at the tag's center. "Centered" is judged from the tag's own pose, not just yaw, against targets measured on the actual robot (the camera isn't mounted perfectly square/centered, so dead-on doesn't read as exactly 180°/0). Gives up after a few seconds if it never gets there, so a missing tag can't stall the rest of the script. Tunable in `AutoConstants` (`kLineUp*`). Also accepts `align to april tag <number> and go to it`. |
 | `recenter` | `recenter` | Same as button 7 - makes wherever the robot is currently facing the new "forward" for field-centric driving. Doesn't move the robot or change its tracked field position, just which way "forward" points from then on for any `drive`/`drive toward`/`drive away` steps after it. |
 | `vision rotation test` | `vision rotation test` | A diagnostic step, not a real match instruction - see [Vision rotation test](#vision-rotation-test) below. Usually the only thing in the script while it's there, since it doesn't return control until it's completely done. |
+| `play beep <number> times` | `play beep 3 times` | Plays the same beep normally played after a step finishes (tone/duration tunable via `kStepCompleteBeepHz`/`kStepCompleteBeepSeconds`, same as always), back to back this many times. Always plays, even if `kStepCompleteBeepEnabled` is `false` - the whole point of this step is to beep - but doesn't also get the normal automatic trailing beep after it, so it's not one extra time on top. `time`/`times` both work. |
 
 A line that's blank, or starts with `#` or `//` (leading whitespace is fine), is a comment and is
 skipped — handy for disabling a step without deleting it.
@@ -122,8 +123,7 @@ it logs the single best sequence seen across the entire run - whichever one saw 
 tags, using duration as a tiebreaker if more than one sequence tied for the top tag count. Before
 every measured rotation, the robot first spins slowly until no tag is in view (or 10 seconds pass,
 in case a tag's visible from every angle), so each measurement starts from the same clean state.
-All the starting
-speeds/increments are tunable in `RotationTestConstants` in
+All the starting speeds/increments are tunable in `RotationTestConstants` in
 [`Constants.java`](src/main/java/frc/robot/Constants.java).
 
 ## Driver-feel details
@@ -165,6 +165,8 @@ match radio bandwidth is limited and shared with everything else the robot sends
 | File | Purpose |
 |---|---|
 | [`RobotContainer.java`](src/main/java/frc/robot/RobotContainer.java) | Subsystems, button bindings, driving/align math, autonomous command building. |
+| [`PulsedSearch.java`](src/main/java/frc/robot/PulsedSearch.java) | Fast/slow pulsed search-spin pattern - shared by target lock, "align with april tag", and the rotation test. |
+| [`VisionRotationTest.java`](src/main/java/frc/robot/VisionRotationTest.java) | Builds the "vision rotation test" diagnostic step. |
 | [`Constants.java`](src/main/java/frc/robot/Constants.java) | Tunable operator, vision, and autonomous constants. |
 | [`AutoScript.java`](src/main/java/frc/robot/AutoScript.java) | Parses `deploy/autonomous.json` into `AutoStep`s. |
 | [`AutoStep.java`](src/main/java/frc/robot/AutoStep.java) | The parsed autonomous instruction types. |

@@ -9,9 +9,6 @@ import static edu.wpi.first.units.Units.MetersPerSecond;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
-import java.util.TreeSet;
-import java.util.function.DoubleSupplier;
 import java.util.function.Supplier;
 
 import org.photonvision.targeting.PhotonTrackedTarget;
@@ -36,7 +33,6 @@ import edu.wpi.first.wpilibj2.command.button.Trigger;
 
 import frc.robot.Constants.AutoConstants;
 import frc.robot.Constants.OperatorConstants;
-import frc.robot.Constants.RotationTestConstants;
 import frc.robot.Constants.VisionConstants;
 import frc.robot.generated.TunerConstants;
 import frc.robot.subsystems.CommandSwerveDrivetrain;
@@ -67,6 +63,10 @@ public class RobotContainer {
   // shows up in the console right away instead of hiding until autonomous actually starts.
   private final List<AutoStep> m_autoSteps = AutoScript.load();
 
+  // Builds the "vision rotation test" autonomous step - see VisionRotationTest's own javadoc.
+  private final VisionRotationTest m_visionRotationTest =
+      new VisionRotationTest(drivetrain, vision, kMaxAngularRate);
+
   // Turns the robot to face an AprilTag - shared by target lock and the "align with april tag"
   // autonomous instruction. Input/output: yaw error in degrees, rad/s out.
   private final PIDController m_alignRotationController = new PIDController(
@@ -81,9 +81,9 @@ public class RobotContainer {
   // being silently suppressed because something was already being logged.
   private String m_loggedSearchReason = null;
 
-  // Drives target lock's pulsed search spin (see PulsedSearch below). Autonomous's "align with
-  // april tag" gets its own instance per call, since it isn't a long-lived field like this one.
-  private final PulsedSearch m_targetLockSearch = new PulsedSearch();
+  // Drives target lock's pulsed search spin (see PulsedSearch). Autonomous's "align with april
+  // tag" gets its own instance per call, since it isn't a long-lived field like this one.
+  private final PulsedSearch m_targetLockSearch = new PulsedSearch(kMaxAngularRate);
 
   // How long the target lock button has been held this press - used to tell a quick tap
   // (toggle on/off) from a hold (plain hold-to-activate) on release.
@@ -526,9 +526,21 @@ public class RobotContainer {
         // Same as button 7 - see its own binding in configureBindings().
         return Commands.runOnce(drivetrain::seedFieldCentric, drivetrain);
     } else if (step instanceof AutoStep.VisionRotationTest) {
-        return visionRotationTestCommand();
+        return m_visionRotationTest.command();
+    } else if (step instanceof AutoStep.PlayBeep playBeep) {
+        return playBeepCommand(playBeep.times());
     }
     throw new IllegalStateException("Unhandled AutoStep: " + step);
+  }
+
+  /** Commands the drivetrain (robot-centric) to a dead stop - the shared final step of nearly
+   * every autonomous command below. */
+  private void stopDrivetrain() {
+    drivetrain.setControl(autoDrive.withVelocityX(0).withVelocityY(0).withRotationalRate(0));
+  }
+
+  private Command stopDrivetrainCommand() {
+    return Commands.runOnce(this::stopDrivetrain, drivetrain);
   }
 
   /** Turns a "drive <direction> <distance>" step into robot-centric velocityX/velocityY. */
@@ -616,8 +628,7 @@ public class RobotContainer {
             m_alignRotationController.reset();
         }, drivetrain),
         driveLoop,
-        Commands.runOnce(() -> drivetrain.setControl(
-            autoDrive.withVelocityX(0).withVelocityY(0).withRotationalRate(0)), drivetrain)
+        stopDrivetrainCommand()
     );
   }
 
@@ -633,7 +644,7 @@ public class RobotContainer {
         Commands.run(() -> drivetrain.setControl(autoDrive.withVelocityX(vxMps).withVelocityY(vyMps)), drivetrain)
             .until(() -> startPose[0].getTranslation()
                 .getDistance(drivetrain.getState().Pose.getTranslation()) >= distanceMeters),
-        Commands.runOnce(() -> drivetrain.setControl(autoDrive.withVelocityX(0).withVelocityY(0)), drivetrain)
+        stopDrivetrainCommand()
     );
   }
 
@@ -670,8 +681,7 @@ public class RobotContainer {
             lastHeading[0] = currentHeading;
             drivetrain.setControl(autoDrive.withVelocityX(0).withVelocityY(0).withRotationalRate(spinRate));
         }, drivetrain).until(() -> turnedRadians[0] >= targetRadians),
-        Commands.runOnce(() -> drivetrain.setControl(
-            autoDrive.withVelocityX(0).withVelocityY(0).withRotationalRate(0)), drivetrain)
+        stopDrivetrainCommand()
     );
   }
 
@@ -683,7 +693,7 @@ public class RobotContainer {
    */
   private Command alignToTagCommand(int tagId) {
     double[] lastYawErrorDegrees = {Double.MAX_VALUE};
-    PulsedSearch search = new PulsedSearch();
+    PulsedSearch search = new PulsedSearch(kMaxAngularRate);
     Timer stepTimer = new Timer();
     boolean[] loggedSearching = {false};
 
@@ -718,8 +728,7 @@ public class RobotContainer {
         }, drivetrain, vision)
             .until(() -> Math.abs(lastYawErrorDegrees[0]) <= AutoConstants.kAutoAlignToleranceDegrees)
             .withTimeout(AutoConstants.kAutoAlignTimeoutSeconds),
-        Commands.runOnce(() -> drivetrain.setControl(
-            autoDrive.withVelocityX(0).withVelocityY(0).withRotationalRate(0)), drivetrain)
+        stopDrivetrainCommand()
     );
   }
 
@@ -762,7 +771,7 @@ public class RobotContainer {
     double[] distanceMeters = {Double.MAX_VALUE};
     double[] tagZAngleDegrees = {Double.MAX_VALUE};
     double[] cameraToTagYMeters = {Double.MAX_VALUE};
-    PulsedSearch search = new PulsedSearch();
+    PulsedSearch search = new PulsedSearch(kMaxAngularRate);
     Timer stepTimer = new Timer();
     // Smooths the commanded speeds so they ramp instead of jumping instantly - a noisy vision
     // reading (or the strafe floor snapping on/off) would otherwise show up as a sudden jerk.
@@ -899,8 +908,7 @@ public class RobotContainer {
             loggedSearching[0] = false;
         }, drivetrain),
         approachLoop,
-        Commands.runOnce(() -> drivetrain.setControl(
-            autoDrive.withVelocityX(0).withVelocityY(0).withRotationalRate(0)), drivetrain)
+        stopDrivetrainCommand()
     );
   }
 
@@ -934,69 +942,6 @@ public class RobotContainer {
     double yErrorMeters = Math.abs(cameraToTagYMeters - AutoConstants.kLineUpCenteredYTargetMeters);
     return zAngleErrorDegrees <= AutoConstants.kLineUpCenteredZAngleToleranceDegrees
         && yErrorMeters <= AutoConstants.kLineUpCenteredYToleranceMeters;
-  }
-
-  /**
-   * Turns the continuous "spin looking for a tag" behavior into alternating fast/slow pulses:
-   * spin fast for {@link VisionConstants#kSearchSpinDegrees} degrees, spin slow for {@link
-   * VisionConstants#kSearchSlowPhaseSeconds}, then spin fast again - repeat until a tag is seen.
-   * Gives the camera a steadier look during the slow phase instead of only ever seeing tags blur
-   * past mid-turn, without ever fully stopping. Set {@link VisionConstants#kSearchPulseEnabled}
-   * false to skip all that and just spin at one steady rate instead.
-   *
-   * <p>Call {@link #reset} once when a search starts, then {@link #pulse} every loop while no
-   * target is seen.
-   */
-  private static final class PulsedSearch {
-    private final Timer m_slowPhaseTimer = new Timer();
-    private Rotation2d m_lastHeading = Rotation2d.kZero;
-    private double m_spunDegrees = 0.0;
-    private boolean m_slowPhase = false;
-
-    void reset(Rotation2d currentHeading) {
-        m_lastHeading = currentHeading;
-        m_spunDegrees = 0.0;
-        m_slowPhase = false;
-    }
-
-    /**
-     * Rotational rate (rad/s) to command this loop - fast during a pulse, slow between them,
-     * using the standard search speeds. Respects {@link VisionConstants#kSearchPulseEnabled}
-     * (spins at one steady rate instead if that's false).
-     */
-    double pulse(Rotation2d currentHeading) {
-        if (!VisionConstants.kSearchPulseEnabled) {
-            return Math.min(VisionConstants.kSearchRotationRadPerSec, kMaxAngularRate);
-        }
-        return pulse(currentHeading, VisionConstants.kSearchRotationRadPerSec, VisionConstants.kSearchSlowRotationRadPerSec);
-    }
-
-    /**
-     * Same as {@link #pulse(Rotation2d)}, but with caller-specified fast/slow speeds instead of
-     * the standard ones - always actually pulses regardless of {@link
-     * VisionConstants#kSearchPulseEnabled}, since passing custom speeds is itself an explicit
-     * request to pulse. Used by the "Vision rotation test" autonomous mode to sweep speeds.
-     */
-    double pulse(Rotation2d currentHeading, double fastRadPerSec, double slowRadPerSec) {
-        if (m_slowPhase) {
-            if (m_slowPhaseTimer.hasElapsed(VisionConstants.kSearchSlowPhaseSeconds)) {
-                m_slowPhase = false;
-                m_spunDegrees = 0.0;
-                m_lastHeading = currentHeading;
-            }
-            return Math.min(slowRadPerSec, kMaxAngularRate);
-        }
-
-        m_spunDegrees += Math.abs(currentHeading.minus(m_lastHeading).getDegrees());
-        m_lastHeading = currentHeading;
-
-        if (m_spunDegrees >= VisionConstants.kSearchSpinDegrees) {
-            m_slowPhase = true;
-            m_slowPhaseTimer.restart();
-            return Math.min(slowRadPerSec, kMaxAngularRate);
-        }
-        return Math.min(fastRadPerSec, kMaxAngularRate);
-    }
   }
 
   /**
@@ -1041,233 +986,24 @@ public class RobotContainer {
         for (TalonFX beepMotor : beepMotors) {
             beepMotor.setControl(new MusicTone(0));
         }
-        drivetrain.setControl(autoDrive.withVelocityX(0).withVelocityY(0).withRotationalRate(0));
+        stopDrivetrain();
     });
   }
 
   /**
-   * Spins slowly ({@link RotationTestConstants#kClearViewRotationRadPerSec}) until no AprilTag
-   * is in view, or {@link RotationTestConstants#kClearViewTimeoutSeconds} elapses - whichever
-   * comes first, so a tag visible from every angle can't hang the rotation test forever. Run
-   * before every measured rotation in {@link #visionRotationTestCommand} so each one starts from
-   * the same clean "nothing visible" state.
+   * "play beep # times" autonomous.json step - plays {@link #beepCommand} back to back,
+   * {@code times} times, always (regardless of {@link AutoConstants#kStepCompleteBeepEnabled}
+   * - see {@link #getAutonomousCommand}, which skips its own automatic trailing beep for this
+   * step so it doesn't play one extra time on top). Each {@link #beepCommand} call needs its own
+   * fresh Command instance - reusing one instance {@code times} times in the same sequence isn't
+   * allowed.
    */
-  private Command clearTagViewCommand() {
-    return Commands.run(() -> drivetrain.setControl(autoDrive.withVelocityX(0).withVelocityY(0)
-            .withRotationalRate(RotationTestConstants.kClearViewRotationRadPerSec)),
-        drivetrain, vision)
-        .until(() -> !vision.hasTarget())
-        .withTimeout(RotationTestConstants.kClearViewTimeoutSeconds)
-        .andThen(Commands.runOnce(() -> drivetrain.setControl(
-            autoDrive.withVelocityX(0).withVelocityY(0).withRotationalRate(0)), drivetrain));
-  }
-
-  /**
-   * Spins a full 360 degrees - tracked cumulatively via odometry, same guard against bogus
-   * sensor jumps as {@link #rotateCommand} - commanding whatever {@code rotationalRateSupplier}
-   * returns each loop (re-evaluated every time, so it can pulse). Every tag ID visible at any
-   * point during the rotation is added to {@code seenIds}, which the caller starts empty and
-   * reads once this finishes.
-   */
-  private Command timedRotationCommand(DoubleSupplier rotationalRateSupplier, Set<Integer> seenIds) {
-    Rotation2d[] lastHeading = {null};
-    double[] turnedRadians = {0.0};
-    return Commands.sequence(
-        Commands.runOnce(() -> {
-            lastHeading[0] = drivetrain.getState().Pose.getRotation();
-            turnedRadians[0] = 0.0;
-        }, drivetrain),
-        Commands.run(() -> {
-            Rotation2d currentHeading = drivetrain.getState().Pose.getRotation();
-            double deltaRadians = Math.abs(currentHeading.minus(lastHeading[0]).getRadians());
-            if (deltaRadians <= Math.toRadians(45)) {
-                turnedRadians[0] += deltaRadians;
-            }
-            lastHeading[0] = currentHeading;
-            seenIds.addAll(vision.getVisibleTagIds());
-            drivetrain.setControl(autoDrive.withVelocityX(0).withVelocityY(0)
-                .withRotationalRate(rotationalRateSupplier.getAsDouble()));
-        }, drivetrain, vision).until(() -> turnedRadians[0] >= Math.toRadians(360)),
-        Commands.runOnce(() -> drivetrain.setControl(
-            autoDrive.withVelocityX(0).withVelocityY(0).withRotationalRate(0)), drivetrain)
-    );
-  }
-
-  /**
-   * Tracks the best (most unique tags, then fastest duration as a tiebreaker) sequence seen
-   * across an entire "Vision rotation test" run - passed down through every {@link
-   * #steadySpeedSequenceCommand}/{@link #pulseSequenceCommand} call so the whole run shares one.
-   */
-  private static final class RotationTestResult {
-    private int tagCount = -1;
-    private double durationSeconds = Double.MAX_VALUE;
-    private String description = "";
-
-    void consider(int candidateTagCount, double candidateDurationSeconds, String candidateDescription) {
-        if (candidateTagCount > tagCount
-                || (candidateTagCount == tagCount && candidateDurationSeconds < durationSeconds)) {
-            tagCount = candidateTagCount;
-            durationSeconds = candidateDurationSeconds;
-            description = candidateDescription;
-        }
+  private Command playBeepCommand(int times) {
+    Command[] beeps = new Command[times];
+    for (int i = 0; i < times; i++) {
+        beeps[i] = beepCommand();
     }
-
-    String summary() {
-        return String.format("%s - %.2fs, %d unique tag(s)", description, durationSeconds, tagCount);
-    }
-  }
-
-  /**
-   * One steady-speed sequence of the "Vision rotation test" (see {@link
-   * #visionRotationTestCommand}): a full 360-degree rotation at a single constant
-   * {@code speedRadPerSec}, counting unique AprilTag IDs seen. {@code previousTagCount} is the
-   * previous sequence's count (or negative for sequence 1, which always runs once
-   * unconditionally). {@code best} tracks the best sequence across the whole test run - every
-   * sequence in the whole test shares the same instance. Once done, and stops early if {@code
-   * speedRadPerSec} would already exceed the drivetrain's actual max turn rate - increasing it
-   * further couldn't change anything:
-   * <ul>
-   *   <li>If the count didn't drop (stayed the same or improved), repeats with
-   *       {@code speedRadPerSec} increased by {@link
-   *       RotationTestConstants#kSteadySpeedIncrementRadPerSec}.
-   *   <li>If it dropped, moves on to {@link #pulseSequenceCommand}.
-   * </ul>
-   */
-  private Command steadySpeedSequenceCommand(double speedRadPerSec, int previousTagCount, RotationTestResult best) {
-    if (speedRadPerSec > kMaxAngularRate) {
-        return Commands.runOnce(() -> RobotLog.logAlways(String.format(
-            "Vision rotation test: steady speed reached the drivetrain's max turn rate (%.2f rad/s) - "
-                + "moving to pulse sequences", kMaxAngularRate)))
-            .andThen(clearTagViewCommand())
-            .andThen(pulseSequenceCommand(RotationTestConstants.kPulseFastSpeedStartRadPerSec,
-                RotationTestConstants.kPulseSlowSpeedStartRadPerSec, -1, best));
-    }
-
-    Set<Integer> seenIds = new TreeSet<>();
-    Timer stepTimer = new Timer();
-    return Commands.sequence(
-        Commands.runOnce(() -> {
-            stepTimer.restart();
-            RobotLog.logAlways(String.format("Vision rotation test: starting steady %.2f rad/s", speedRadPerSec));
-        }),
-        timedRotationCommand(() -> speedRadPerSec, seenIds),
-        Commands.runOnce(() -> {
-            RobotLog.logAlways(String.format(
-                "Vision rotation test: steady %.2f rad/s - %.2fs, %d unique tag(s) %s",
-                speedRadPerSec, stepTimer.get(), seenIds.size(), seenIds));
-            best.consider(seenIds.size(), stepTimer.get(), String.format("steady %.2f rad/s", speedRadPerSec));
-        }),
-        // Deferred because which command comes next depends on seenIds, only known once the
-        // rotation above actually finishes - the recursive call itself just builds the next
-        // phase's command tree, same as any other command-building method call.
-        Commands.defer(() -> {
-            int count = seenIds.size();
-            if (previousTagCount < 0 || count >= previousTagCount) {
-                return clearTagViewCommand().andThen(steadySpeedSequenceCommand(
-                    speedRadPerSec + RotationTestConstants.kSteadySpeedIncrementRadPerSec, count, best));
-            }
-            RobotLog.logAlways("Vision rotation test: steady speed tag count dropped - moving to pulse sequences");
-            return clearTagViewCommand().andThen(pulseSequenceCommand(
-                RotationTestConstants.kPulseFastSpeedStartRadPerSec,
-                RotationTestConstants.kPulseSlowSpeedStartRadPerSec, -1, best));
-        }, Set.of(drivetrain, vision))
-    );
-  }
-
-  /**
-   * One pulse sequence of the "Vision rotation test" (see {@link #visionRotationTestCommand}): a
-   * full 360-degree rotation using target lock's fast/slow pulse pattern at
-   * {@code fastSpeedRadPerSec}/{@code slowSpeedRadPerSec}, counting unique AprilTag IDs seen.
-   * {@code previousTagCount} is the previous sequence's count (or negative for sequence 1, which
-   * always runs once unconditionally). {@code best} tracks the best sequence across the whole
-   * test run - see {@link #steadySpeedSequenceCommand}. Stops early (ending the whole test, and
-   * logging {@code best}'s final summary) if {@code fastSpeedRadPerSec} would already exceed the
-   * drivetrain's actual max turn rate. Otherwise:
-   * <ul>
-   *   <li>If the count didn't drop, repeats with both speeds increased by {@link
-   *       RotationTestConstants#kPulseFastSpeedIncrementRadPerSec}/{@link
-   *       RotationTestConstants#kPulseSlowSpeedIncrementRadPerSec}.
-   *   <li>If it dropped, the whole test is done - {@code best}'s summary is logged here too.
-   * </ul>
-   */
-  private Command pulseSequenceCommand(
-      double fastSpeedRadPerSec, double slowSpeedRadPerSec, int previousTagCount, RotationTestResult best) {
-    if (fastSpeedRadPerSec > kMaxAngularRate) {
-        return Commands.runOnce(() -> {
-            RobotLog.logAlways(String.format(
-                "Vision rotation test: pulse fast speed reached the drivetrain's max turn rate (%.2f rad/s) - "
-                    + "test complete", kMaxAngularRate));
-            RobotLog.logAlways("Vision rotation test: best result - " + best.summary());
-        });
-    }
-
-    Set<Integer> seenIds = new TreeSet<>();
-    Timer stepTimer = new Timer();
-    PulsedSearch search = new PulsedSearch();
-    return Commands.sequence(
-        Commands.runOnce(() -> {
-            stepTimer.restart();
-            search.reset(drivetrain.getState().Pose.getRotation());
-            RobotLog.logAlways(String.format(
-                "Vision rotation test: starting pulse fast=%.2f/slow=%.2f rad/s", fastSpeedRadPerSec, slowSpeedRadPerSec));
-        }, drivetrain),
-        timedRotationCommand(
-            () -> search.pulse(drivetrain.getState().Pose.getRotation(), fastSpeedRadPerSec, slowSpeedRadPerSec),
-            seenIds),
-        Commands.runOnce(() -> {
-            RobotLog.logAlways(String.format(
-                "Vision rotation test: pulse fast=%.2f/slow=%.2f rad/s - %.2fs, %d unique tag(s) %s",
-                fastSpeedRadPerSec, slowSpeedRadPerSec, stepTimer.get(), seenIds.size(), seenIds));
-            best.consider(seenIds.size(), stepTimer.get(),
-                String.format("pulse fast=%.2f/slow=%.2f rad/s", fastSpeedRadPerSec, slowSpeedRadPerSec));
-        }),
-        // Deferred for the same reason as steadySpeedSequenceCommand's - see its comment.
-        Commands.defer(() -> {
-            int count = seenIds.size();
-            if (previousTagCount < 0 || count >= previousTagCount) {
-                return clearTagViewCommand().andThen(pulseSequenceCommand(
-                    fastSpeedRadPerSec + RotationTestConstants.kPulseFastSpeedIncrementRadPerSec,
-                    slowSpeedRadPerSec + RotationTestConstants.kPulseSlowSpeedIncrementRadPerSec, count, best));
-            }
-            RobotLog.logAlways("Vision rotation test: pulse tag count dropped - test complete");
-            RobotLog.logAlways("Vision rotation test: best result - " + best.summary());
-            return Commands.none();
-        }, Set.of(drivetrain, vision))
-    );
-  }
-
-  /**
-   * "vision rotation test" autonomous.json step - a diagnostic, not a real match step. Finds how
-   * fast the robot can spin while still reliably seeing AprilTags by running a series of full
-   * 360-degree rotations, each faster than the last, logging the duration and unique-tag count
-   * of each one:
-   * <ol>
-   *   <li>Steady-speed sequences ({@link #steadySpeedSequenceCommand}) - spin at one constant
-   *       rate, starting at {@link RotationTestConstants#kSteadySpeedStartRadPerSec} and adding
-   *       {@link RotationTestConstants#kSteadySpeedIncrementRadPerSec} each time, for as long as
-   *       the tag count doesn't drop. Once it drops (or the speed maxes out), move on to...
-   *   <li>Pulse sequences ({@link #pulseSequenceCommand}) - same idea, but spinning in target
-   *       lock's fast/slow pulse pattern instead, starting at {@link
-   *       RotationTestConstants#kPulseFastSpeedStartRadPerSec}/{@link
-   *       RotationTestConstants#kPulseSlowSpeedStartRadPerSec}. Ends the whole test once the tag
-   *       count drops here too (or the fast speed maxes out).
-   * </ol>
-   * Before every measured rotation, {@link #clearTagViewCommand} spins slowly until no tag is in
-   * view first, so each measurement starts clean.
-   *
-   * <p>Silences {@link RobotLog#log} for the whole test (restored once it ends, however it ends)
-   * so only its own result lines - logged via {@link RobotLog#logAlways} - show up on the
-   * console, not the routine status chatter (target lock, "April Tags in view", etc.) that'd
-   * otherwise flood it during all this rapid-fire spinning. Once the whole test ends (either way
-   * it can end - see {@link #pulseSequenceCommand}), logs the single best sequence seen across
-   * the entire run - most unique tags, fastest duration as a tiebreaker.
-   */
-  private Command visionRotationTestCommand() {
-    RotationTestResult best = new RotationTestResult();
-    return Commands.runOnce(() -> RobotLog.setQuiet(true))
-        .andThen(clearTagViewCommand())
-        .andThen(steadySpeedSequenceCommand(RotationTestConstants.kSteadySpeedStartRadPerSec, -1, best))
-        .finallyDo(() -> RobotLog.setQuiet(false));
+    return Commands.sequence(beeps);
   }
 
   /**
@@ -1276,7 +1012,9 @@ public class RobotContainer {
    * missing or has a mistake in it - {@link Robot} skips scheduling when this is null. Each step
    * beeps once it finishes - see {@link #beepCommand} - unless {@link
    * AutoConstants#kStepCompleteBeepEnabled} is false, in which case the beep is skipped
-   * entirely (not just silenced) so cycle times aren't padded out waiting on it.
+   * entirely (not just silenced) so cycle times aren't padded out waiting on it. {@link
+   * AutoStep.PlayBeep} steps are excluded from that trailing beep regardless, since their own
+   * body already is the beep - it'd otherwise play twice.
    *
    * @return the command to run in autonomous, or null for none
    */
@@ -1285,7 +1023,7 @@ public class RobotContainer {
         return null;
     }
     return Commands.sequence(m_autoSteps.stream()
-        .map(step -> AutoConstants.kStepCompleteBeepEnabled
+        .map(step -> (AutoConstants.kStepCompleteBeepEnabled && !(step instanceof AutoStep.PlayBeep))
             ? autoStepCommand(step).andThen(beepCommand())
             : autoStepCommand(step))
         .toArray(Command[]::new));
