@@ -37,6 +37,13 @@ public final class Constants {
     public static final double kTranslationDeadband = 0.10;
     public static final double kRotationDeadband = 0.10;
 
+    // While target lock is active, twisting the stick past this fraction forces the same pulsed
+    // search spin as buttons 3/4 (direction from which way it's twisted), instead of being
+    // ignored the way it normally is while target lock has taken over rotation. Higher than the
+    // plain kRotationDeadband above - a deliberate twist is needed to invoke this, not just
+    // ordinary stick noise/drift.
+    public static final double kStickForceSpinThreshold = 0.25;
+
     // Shapes stick response above the deadband: output = stickFraction ^ exponent. 1.0 is
     // linear; higher makes low-speed response gentler while full stick still reaches top speed.
     public static final double kTranslationCurveExponent = 2.0;

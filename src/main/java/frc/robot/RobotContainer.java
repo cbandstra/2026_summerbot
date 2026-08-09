@@ -117,6 +117,16 @@ public class RobotContainer {
   // an AprilTag's in view again instead of needing button 2 to turn it back on.
   private boolean m_targetLockSuspended = false;
 
+  // True while the driver's twist stick was past kStickForceSpinThreshold last loop - used to
+  // catch the moment it crosses that threshold (see its use below) the same way a button's
+  // onTrue would, since the stick itself has no such event to hook.
+  private boolean m_stickWasForcingSpin = false;
+
+  // True if a clockwise stick twist (rather than button 4) is what armed
+  // m_forcingClockwiseUntilFound - purely for logging which source is responsible, doesn't
+  // affect behavior (both arm the exact same latch).
+  private boolean m_forcingClockwiseFromStick = false;
+
   // True until the robot's been enabled once since power-on. The gyro zeroes itself to whichever
   // way the robot happens to be pointed when the roboRIO boots - if that's not facing away from
   // the driver station (e.g. it booted on a cart or the pit table), "forward" on the stick drives
@@ -181,6 +191,7 @@ public class RobotContainer {
             RobotLog.log("Target lock: OFF (robot disabled)");
         }
         m_forcingClockwiseUntilFound = false;
+        m_forcingClockwiseFromStick = false;
         m_targetLockSuspended = false;
     }));
 
@@ -236,6 +247,7 @@ public class RobotContainer {
         }
         if (!m_targetLockToggleOn) {
             m_forcingClockwiseUntilFound = false;
+            m_forcingClockwiseFromStick = false;
             m_targetLockSuspended = false;
         }
     }));
@@ -274,6 +286,7 @@ public class RobotContainer {
         m_targetLockLastDistanceMeters = Double.MAX_VALUE;
         m_forcingClockwiseUntilFound = true;
         m_forcingClockwiseSeenLoss = false;
+        m_forcingClockwiseFromStick = false;
     }));
 
     // Buttons 8, 9, and 10 (declared below) take the drivetrain over completely while held, same
@@ -302,34 +315,61 @@ public class RobotContainer {
                 m_loggedSearchReason = null;
                 m_targetLockSearch.reset(drivetrain.getState().Pose.getRotation());
                 m_targetLockLastDistanceMeters = Double.MAX_VALUE;
+                m_stickWasForcingSpin = false;
             },
             () -> {
                 double maxSpeed = kMaxSpeedMps * throttleSpeedPercent();
                 double[] translation = computeTranslationVelocity(maxSpeed);
                 boolean forceSpin3 = forceSpinButton.getAsBoolean();
-                // Button 4 latches (see m_forcingClockwiseUntilFound's own comment) rather than
-                // needing to stay held. It only counts as "found" - clearing the override - once
-                // a tag's been lost and then reacquired, not just whatever was already in view the
-                // instant the button was pressed.
+                // Counterclockwise twist behaves like button 3 (momentary - counterclockwise is
+                // already the default search direction, so there's nothing extra to latch once
+                // it's released). Clockwise twist behaves like button 4 instead (see
+                // m_forcingClockwiseUntilFound's own comment) - it has to latch, or releasing the
+                // stick would fall straight back to the counterclockwise default mid-search
+                // instead of continuing clockwise until a tag's actually (re)found.
+                double rawStickTwist = -m_driverController.getRawAxis(OperatorConstants.kThrustmasterTwistAxis);
+                boolean stickForcingSpin =
+                    Math.abs(rawStickTwist) >= OperatorConstants.kStickForceSpinThreshold;
+                boolean stickWantsClockwise = rawStickTwist < 0;
+                if (stickForcingSpin && !m_stickWasForcingSpin) {
+                    // Fresh twist - reset the search the same way button 3/4's own press does,
+                    // so it starts a clean pulse instead of continuing wherever the search
+                    // object's internal state happened to be left (e.g. stale from a while ago
+                    // if a tag's been aligned to since).
+                    m_targetLockSearch.reset(drivetrain.getState().Pose.getRotation());
+                    if (stickWantsClockwise) {
+                        m_forcingClockwiseUntilFound = true;
+                        m_forcingClockwiseSeenLoss = false;
+                        m_targetLockLastDistanceMeters = Double.MAX_VALUE;
+                        m_forcingClockwiseFromStick = true;
+                    }
+                }
+                m_stickWasForcingSpin = stickForcingSpin;
+                // Button 4 (or a clockwise stick twist, above) latches rather than needing to
+                // stay held/twisted. It only counts as "found" - clearing the override - once a
+                // tag's been lost and then reacquired, not just whatever was already in view the
+                // instant it was armed.
                 if (m_forcingClockwiseUntilFound) {
                     if (vision.hasTarget()) {
                         if (m_forcingClockwiseSeenLoss) {
                             m_forcingClockwiseUntilFound = false;
+                            m_forcingClockwiseFromStick = false;
                         }
                     } else {
                         m_forcingClockwiseSeenLoss = true;
                     }
                 }
+                boolean anyForcingSpin = forceSpin3 || stickForcingSpin || m_forcingClockwiseUntilFound;
                 boolean forceSpinClockwise = m_forcingClockwiseUntilFound;
                 double rotationalRate;
-                // Both force-spin buttons override an already-found target while forcing - that's
+                // Every forcing source overrides an already-found target while forcing - that's
                 // their whole purpose, deliberately looking away from a locked tag to find a new
                 // one.
-                if (vision.hasTarget() && !forceSpin3 && !forceSpinClockwise) {
+                if (vision.hasTarget() && !anyForcingSpin) {
                     rotationalRate = computeAlignRotationalRate();
                     m_loggedSearchReason = null;
                     m_targetLockLastDistanceMeters = vision.getTargetDistanceMeters();
-                } else if (!forceSpin3 && !forceSpinClockwise
+                } else if (!anyForcingSpin
                         && m_targetLockLastDistanceMeters < VisionConstants.kCloseTargetLossDistanceMeters) {
                     // Lost a tag we were right up against - it's almost certainly still there,
                     // just out of frame. Hold still instead of spinning away from it.
@@ -342,9 +382,11 @@ public class RobotContainer {
                 } else {
                     String reason;
                     if (forceSpinClockwise) {
-                        reason = "Target lock: forcing clockwise search (button 4)";
-                    } else if (forceSpin3 && vision.hasTarget()) {
-                        reason = "Target lock: forcing search spin (button 3)";
+                        reason = "Target lock: forcing clockwise search ("
+                            + (m_forcingClockwiseFromStick ? "twist stick" : "button 4") + ")";
+                    } else if (anyForcingSpin && vision.hasTarget()) {
+                        reason = "Target lock: forcing search spin ("
+                            + (forceSpin3 ? "button 3" : "twist stick") + ")";
                     } else {
                         reason = "Looking for April tags";
                     }
