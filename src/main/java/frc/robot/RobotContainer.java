@@ -64,6 +64,10 @@ public class RobotContainer {
   // shows up in the console right away instead of hiding until autonomous actually starts.
   private final List<AutoStep> m_autoSteps = AutoScript.load();
 
+  // Button 5's "go home" instructions parsed from deploy/goHome.json - same format/parser as
+  // autonomous.json, just a separate file and a separate (teleop-only) trigger.
+  private final List<AutoStep> m_goHomeSteps = AutoScript.load("goHome.json");
+
   // Builds the "vision rotation test" autonomous step - see VisionRotationTest's own javadoc.
   private final VisionRotationTest m_visionRotationTest =
       new VisionRotationTest(drivetrain, vision, kMaxAngularRate);
@@ -451,6 +455,14 @@ public class RobotContainer {
         && !driveAwayLockedTargetButton.getAsBoolean() && !driveTowardLockedTargetButton.getAsBoolean())
         .whileTrue(lineUpToLockedTargetCommand());
 
+    // Button 5: runs deploy/goHome.json's steps (teleop only) - the same instruction format and
+    // AutoStep dispatch as autonomous.json, just a separate file/trigger. Cancels itself the
+    // instant the driver touches any other control (stick past deadband, any other button) -
+    // see anyManualInput() - handing the drivetrain straight back to normal driving rather than
+    // fighting the driver for it.
+    RobotModeTriggers.teleop().and(m_driverController.button(OperatorConstants.kThrustmasterGoHomeButton))
+        .onTrue(goHomeCommand());
+
     drivetrain.registerTelemetry(logger::telemeterize);
   }
 
@@ -576,6 +588,40 @@ public class RobotContainer {
     // on the robot via the recenter button: after seeding a known forward direction, driving
     // "forward" went the opposite way.
     return new double[] {-unitX * outputSpeed, -unitY * outputSpeed};
+  }
+
+  /**
+   * Button 5's "go home" sequence - runs {@link #m_goHomeSteps} (parsed from deploy/goHome.json)
+   * back to back using the same {@link #autoStepCommand} dispatch autonomous.json steps use, and
+   * cancels itself the moment {@link #anyManualInput} goes true, handing the drivetrain back to
+   * normal driving instead of running to completion regardless of what the driver's doing.
+   */
+  private Command goHomeCommand() {
+    return Commands.sequence(m_goHomeSteps.stream().map(this::autoStepCommand).toArray(Command[]::new))
+        .until(this::anyManualInput);
+  }
+
+  /**
+   * True if the driver's touching any control other than button 5 itself - stick translation/
+   * twist past their usual deadbands, or any other button held. Used to cancel {@link
+   * #goHomeCommand} the instant the driver wants control back, rather than only reacting to
+   * specific buttons the way the rest of this class does.
+   */
+  private boolean anyManualInput() {
+    double stickX = m_driverController.getRawAxis(OperatorConstants.kThrustmasterXAxis);
+    double stickY = m_driverController.getRawAxis(OperatorConstants.kThrustmasterYAxis);
+    double stickTwist = m_driverController.getRawAxis(OperatorConstants.kThrustmasterTwistAxis);
+    if (Math.hypot(stickX, stickY) >= OperatorConstants.kTranslationDeadband
+            || Math.abs(stickTwist) >= OperatorConstants.kRotationDeadband) {
+        return true;
+    }
+    for (int button = 1; button <= m_driverController.getHID().getButtonCount(); button++) {
+        if (button != OperatorConstants.kThrustmasterGoHomeButton
+                && m_driverController.getHID().getRawButton(button)) {
+            return true;
+        }
+    }
+    return false;
   }
 
   /** Turns an AutoStep into a runnable Command using the robot's own subsystems. */

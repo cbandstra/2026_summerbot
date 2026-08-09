@@ -27,6 +27,7 @@ public final class Constants {
     public static final int kThrustmasterDriveAwayFromLockedTargetButton = 9;
     public static final int kThrustmasterDriveTowardLockedTargetButton = 8;
     public static final int kThrustmasterLineUpLockedTargetButton = 10;
+    public static final int kThrustmasterGoHomeButton = 5;
 
     // A press shorter than this toggles target lock on/off. A press this long or longer acts
     // like plain hold-to-activate instead, and always ends off on release (even if it was

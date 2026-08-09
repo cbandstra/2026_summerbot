@@ -56,9 +56,17 @@ public final class AutoScript {
 
   /** Loads and parses autonomous.json. Returns an empty list if it's missing or invalid. */
   public static List<AutoStep> load() {
-    File file = new File(Filesystem.getDeployDirectory(), "autonomous.json");
+    return load("autonomous.json");
+  }
+
+  /**
+   * Loads and parses a script file (same format as autonomous.json) from the deploy directory by
+   * name - e.g. {@code "goHome.json"}. Returns an empty list if it's missing or invalid.
+   */
+  public static List<AutoStep> load(String fileName) {
+    File file = new File(Filesystem.getDeployDirectory(), fileName);
     if (!file.exists()) {
-      RobotLog.log("AutoScript: no autonomous.json found - autonomous will do nothing");
+      RobotLog.log("AutoScript: no " + fileName + " found - won't run");
       return List.of();
     }
 
@@ -66,14 +74,14 @@ public final class AutoScript {
     try {
       lines = new ObjectMapper().readValue(file, String[].class);
     } catch (IOException e) {
-      RobotLog.log("AutoScript: couldn't read autonomous.json - " + e.getMessage());
+      RobotLog.log("AutoScript: couldn't read " + fileName + " - " + e.getMessage());
       return List.of();
     }
 
     try {
       return parseLines(lines);
     } catch (IllegalArgumentException e) {
-      RobotLog.log("AutoScript: " + e.getMessage() + " - autonomous will do nothing");
+      RobotLog.log("AutoScript: " + fileName + ": " + e.getMessage() + " - won't run");
       return List.of();
     }
   }
