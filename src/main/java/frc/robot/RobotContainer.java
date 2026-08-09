@@ -1028,8 +1028,12 @@ public class RobotContainer {
                 .withRotationalRate(rotationLimiter.calculate(rotationalRate)));
         }, drivetrain, vision);
     if (stopWhenCentered) {
+        // One-sided on purpose, matching stillTooFar above - finishes once at or closer than the
+        // stop point, not only inside a narrow band around it. Momentum can carry the robot a bit
+        // past kLineUpDistanceMeters before vx clamps to 0; a two-sided band would leave it stuck
+        // there forever since nothing drives it back out to the band once it overshoots.
         approachLoop = approachLoop.until(() -> isCentered(tagZAngleDegrees[0], cameraToTagYMeters[0])
-            && Math.abs(distanceMeters[0] - AutoConstants.kLineUpDistanceMeters)
+            && distanceMeters[0] - AutoConstants.kLineUpDistanceMeters
                 <= AutoConstants.kLineUpDistanceToleranceMeters);
     }
     if (timeoutSeconds > 0) {
