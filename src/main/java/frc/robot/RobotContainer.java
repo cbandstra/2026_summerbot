@@ -181,10 +181,9 @@ public class RobotContainer {
         })
     );
 
-    // Idle (don't fight the brakes) while disabled. Also force target lock's toggle off - it
-    // gets turned back on automatically at the start of teleop (see RobotModeTriggers.teleop()
-    // below), but this guarantees a clean, consistent starting state rather than carrying over
-    // whatever it happened to be when the robot was disabled (e.g. mid-autonomous).
+    // Idle (don't fight the brakes) while disabled. Also force target lock's toggle off, so
+    // teleop always starts with it off (default kept false too - see m_targetLockToggleOn) and
+    // it can't silently resume searching/aligning the instant the robot is re-enabled.
     final var idle = new SwerveRequest.Idle();
     RobotModeTriggers.disabled().whileTrue(
         drivetrain.applyRequest(() -> idle).ignoringDisable(true)
@@ -207,15 +206,6 @@ public class RobotContainer {
             m_needsInitialFieldCentricSeed = false;
             RobotLog.log("Drivetrain: seeded forward direction on first enable");
         }
-    }));
-
-    // Target lock starts every teleop period turned on hands-free, same as tapping button 2 -
-    // the driver doesn't have to remember to turn it on themselves. Only fires on teleop
-    // specifically (not autonomous) - the disabled trigger above already guarantees it's off
-    // heading into this, so there's nothing else to reset here.
-    RobotModeTriggers.teleop().onTrue(Commands.runOnce(() -> {
-        m_targetLockToggleOn = true;
-        RobotLog.log("Target lock: ON (auto-enabled at teleop start)");
     }));
 
     // Hold the trigger to lock the wheels in an X pattern (resists being pushed).
@@ -592,12 +582,16 @@ public class RobotContainer {
 
   /**
    * Button 5's "go home" sequence - runs {@link #m_goHomeSteps} (parsed from deploy/goHome.json)
-   * back to back using the same {@link #autoStepCommand} dispatch autonomous.json steps use, and
-   * cancels itself the moment {@link #anyManualInput} goes true, handing the drivetrain back to
-   * normal driving instead of running to completion regardless of what the driver's doing.
+   * back to back using the same {@link #autoStepCommand} dispatch autonomous.json steps use,
+   * ending with "play beep 4 times" (see {@link #getAutonomousCommand}'s own trailing beep - any
+   * automation script ends this way) once the whole sequence finishes. Cancels itself the moment
+   * {@link #anyManualInput} goes true - including during that trailing beep - handing the
+   * drivetrain back to normal driving instead of running to completion regardless of what the
+   * driver's doing.
    */
   private Command goHomeCommand() {
     return Commands.sequence(m_goHomeSteps.stream().map(this::autoStepCommand).toArray(Command[]::new))
+        .andThen(playBeepCommand(4))
         .until(this::anyManualInput);
   }
 
@@ -1158,7 +1152,10 @@ public class RobotContainer {
    * AutoConstants#kStepCompleteBeepEnabled} is false, in which case the beep is skipped
    * entirely (not just silenced) so cycle times aren't padded out waiting on it. {@link
    * AutoStep.PlayBeep} steps are excluded from that trailing beep regardless, since their own
-   * body already is the beep - it'd otherwise play twice.
+   * body already is the beep - it'd otherwise play twice. Once every step is done, "play beep 4
+   * times" runs regardless of {@code kStepCompleteBeepEnabled} - every automation script (this
+   * one, {@link #goHomeCommand}, or any future one) ends the same way, audibly distinct from a
+   * single step finishing.
    *
    * @return the command to run in autonomous, or null for none
    */
@@ -1170,6 +1167,7 @@ public class RobotContainer {
         .map(step -> (AutoConstants.kStepCompleteBeepEnabled && !(step instanceof AutoStep.PlayBeep))
             ? autoStepCommand(step).andThen(beepCommand())
             : autoStepCommand(step))
-        .toArray(Command[]::new));
+        .toArray(Command[]::new))
+        .andThen(playBeepCommand(4));
   }
 }

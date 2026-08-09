@@ -18,7 +18,6 @@
   "rotate 60 degrees clockwise",
   "rotate 60 degrees counterclockwise",
   "rotate 30 degrees clockwise",
-  "play beep 4 times",
 
   "// --- Reference: every supported instruction (see README.md); # stands in for a number ---",
   "// drive forward # feet",
