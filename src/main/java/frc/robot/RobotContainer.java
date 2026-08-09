@@ -221,9 +221,10 @@ public class RobotContainer {
     // Press to make wherever the robot is CURRENTLY facing the new "forward" for field-centric
     // driving - useful after the robot's hand-placed at an angle, or to redefine forward
     // mid-match. Doesn't move the robot or touch its tracked field position, just which way the
-    // stick's "forward" points from now on.
+    // stick's "forward" points from now on. Beeps afterward (same beep as an autonomous step
+    // finishing) as audible confirmation it actually happened.
     m_driverController.button(OperatorConstants.kThrustmasterRecenterButton)
-        .onTrue(Commands.runOnce(drivetrain::seedFieldCentric, drivetrain));
+        .onTrue(Commands.runOnce(drivetrain::seedFieldCentric, drivetrain).andThen(beepCommand()));
 
     // Target lock: spin looking for any AprilTag, then turn to face it once seen. Translation
     // stays on the stick the whole time - only rotation is taken over.
