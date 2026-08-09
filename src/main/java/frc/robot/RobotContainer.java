@@ -935,7 +935,8 @@ public class RobotContainer {
    * spin fast for {@link VisionConstants#kSearchSpinDegrees} degrees, spin slow for {@link
    * VisionConstants#kSearchSlowPhaseSeconds}, then spin fast again - repeat until a tag is seen.
    * Gives the camera a steadier look during the slow phase instead of only ever seeing tags blur
-   * past mid-turn, without ever fully stopping.
+   * past mid-turn, without ever fully stopping. Set {@link VisionConstants#kSearchPulseEnabled}
+   * false to skip all that and just spin at one steady rate instead.
    *
    * <p>Call {@link #reset} once when a search starts, then {@link #pulse} every loop while no
    * target is seen.
@@ -954,6 +955,10 @@ public class RobotContainer {
 
     /** Rotational rate (rad/s) to command this loop - fast during a pulse, slow between them. */
     double pulse(Rotation2d currentHeading) {
+        if (!VisionConstants.kSearchPulseEnabled) {
+            return Math.min(VisionConstants.kSearchRotationRadPerSec, kMaxAngularRate);
+        }
+
         if (m_slowPhase) {
             if (m_slowPhaseTimer.hasElapsed(VisionConstants.kSearchSlowPhaseSeconds)) {
                 m_slowPhase = false;

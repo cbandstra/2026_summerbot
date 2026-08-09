@@ -67,7 +67,13 @@ public final class Constants {
     public static final double kAlignRotationKI = 0.0;
     public static final double kAlignRotationKD = 0.0;
 
-    // How fast (rad/s) to spin during each fast pulse while searching for a tag.
+    // Set false to spin at a single steady rate (kSearchRotationRadPerSec) instead of alternating
+    // fast/slow pulses - see kSearchSpinDegrees/kSearchSlowRotationRadPerSec/
+    // kSearchSlowPhaseSeconds below, which are all ignored while this is false.
+    public static final boolean kSearchPulseEnabled = true;
+
+    // How fast (rad/s) to spin during each fast pulse while searching for a tag - or the single
+    // steady spin rate if kSearchPulseEnabled is false.
     public static final double kSearchRotationRadPerSec = 2.0;
 
     // How fast (rad/s) to spin during the slow phase between pulses. Slower than the fast pulse,
