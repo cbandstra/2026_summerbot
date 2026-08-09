@@ -167,8 +167,10 @@ public class RobotContainer {
         })
     );
 
-    // Idle (don't fight the brakes) while disabled. Also force target lock's toggle off, so it
-    // can't silently resume searching/aligning the instant the robot is re-enabled.
+    // Idle (don't fight the brakes) while disabled. Also force target lock's toggle off - it
+    // gets turned back on automatically at the start of teleop (see RobotModeTriggers.teleop()
+    // below), but this guarantees a clean, consistent starting state rather than carrying over
+    // whatever it happened to be when the robot was disabled (e.g. mid-autonomous).
     final var idle = new SwerveRequest.Idle();
     RobotModeTriggers.disabled().whileTrue(
         drivetrain.applyRequest(() -> idle).ignoringDisable(true)
@@ -190,6 +192,15 @@ public class RobotContainer {
             m_needsInitialFieldCentricSeed = false;
             RobotLog.log("Drivetrain: seeded forward direction on first enable");
         }
+    }));
+
+    // Target lock starts every teleop period turned on hands-free, same as tapping button 2 -
+    // the driver doesn't have to remember to turn it on themselves. Only fires on teleop
+    // specifically (not autonomous) - the disabled trigger above already guarantees it's off
+    // heading into this, so there's nothing else to reset here.
+    RobotModeTriggers.teleop().onTrue(Commands.runOnce(() -> {
+        m_targetLockToggleOn = true;
+        RobotLog.log("Target lock: ON (auto-enabled at teleop start)");
     }));
 
     // Hold the trigger to lock the wheels in an X pattern (resists being pushed).
