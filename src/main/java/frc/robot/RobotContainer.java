@@ -746,6 +746,9 @@ public class RobotContainer {
    * for buttons 8/9's held versions. The commanded speed is ramped (see {@link
    * AutoConstants#kDriveTowardSlewMpsPerSec}) rather than snapping straight to
    * {@code vxMpsSupplier}'s value - jumping straight there from a stop was spinning the wheels.
+   * The ramp itself starts from {@link AutoConstants#kDriveTowardStartSpeedMps} rather than 0, so
+   * the robot's already moving and correcting aim right away instead of crawling for the first
+   * stretch of the ramp.
    */
   private Command driveWithVisionCorrectionCommand(DoubleSupplier vxMpsSupplier, double distanceMeters) {
     Pose2d[] startPose = {null};
@@ -763,7 +766,7 @@ public class RobotContainer {
         Commands.runOnce(() -> {
             startPose[0] = drivetrain.getState().Pose;
             m_alignRotationController.reset();
-            vxLimiter.reset(0);
+            vxLimiter.reset(Math.copySign(AutoConstants.kDriveTowardStartSpeedMps, vxMpsSupplier.getAsDouble()));
         }, drivetrain),
         driveLoop,
         stopDrivetrainCommand()

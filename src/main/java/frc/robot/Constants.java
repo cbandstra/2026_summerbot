@@ -192,8 +192,16 @@ public final class Constants {
     // Caps how fast the commanded forward/backward speed is allowed to change (m/s per second)
     // for "drive toward target"/"drive away from target" (both the autonomous steps and buttons
     // 8/9's held equivalents) - jumping straight to the target speed from a stop was spinning the
-    // wheels (2026-08-09). Same ~1 second ramp-to-top-speed as kLineUpTranslationSlewMpsPerSec.
-    public static final double kDriveTowardSlewMpsPerSec = 2.5;
+    // wheels (2026-08-09). Same rate as kLineUpTranslationSlewMpsPerSec. Slowed from 2.5 (same
+    // day) - even ramped, 2.5 still reached top speed too quickly to keep fine-tuning aim while
+    // the wheels straighten out.
+    public static final double kDriveTowardSlewMpsPerSec = 1.5;
+
+    // The ramp above starts from this speed (m/s) instead of a dead stop, so the robot's already
+    // moving (and correcting aim) right away instead of spending the first stretch of the ramp
+    // too slow to be worth much. Lowered from 0.5 (2026-08-09) - confirmed on the robot that 0.5
+    // was still enough of a jump from a dead stop to spin the wheels.
+    public static final double kDriveTowardStartSpeedMps = 0.15;
 
     // While still far out, aiming at the tag's center normally allows up to the drivetrain's
     // full turn speed (kMaxAngularRate) - but a big initial yaw error right after the search
