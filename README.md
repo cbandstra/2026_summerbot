@@ -1,225 +1,193 @@
 # 2026 Summer Bot
 
-FRC swerve-drive robot code (Team 4296 hardware) built on WPILib command-based Java and CTRE
-Phoenix 6, with PhotonVision AprilTag alignment. Driven with a Thrustmaster T.16000M flight stick.
+Team 4296's off-season swerve-drive robot, coded entirely with AI-assisted tools (Claude Code).
+The hardware is built to come apart fast: the roboRIO and driver camera mount on a removable mesh
+backing, and the networking/vision gear is zip-tied into the top crate/cover that connects to the rest
+of the robot with a single Ethernet cable. Wiring runs are cut to exact length and terminated in
+lever nut connectors for clean, quick-swap routing.
+
+<img src="docs/images/IMG_1357.png" width="400" alt="Robot">
+
+## Index
+
+- [Controls](#controls)
+  - [Autonomous](#autonomous)
+- [Driver-feel & traction control](#driver-feel--traction-control)
+- [Vision](#vision)
+- [Project layout](#project-layout)
+- [Hardware](#hardware)
+- [Miscellaneous hardware](#miscellaneous-hardware)
+- [Images](#images)
 
 ## Controls
 
-Driver station USB port 0, Thrustmaster T.16000M. **Verify axis/button numbers on the Driver
-Station's USB Devices tab before driving** — the indices below are the stick's standard USB report
-order, not guaranteed on every setup.
+<img src="docs/images/RobotButtonMap.png" width="600" alt="Flight stick button map">
 
-### Axes (always active — normal field-centric driving)
+[Button Map File](https://docs.google.com/presentation/d/1TM2KT90CQzxj-xF5mtGECWA7Mnrt75R7sqwiD7auCAI/edit?slide=id.p#slide=id.p)
+
+### Axes (field-centric driving)
 
 | Control | Axis | Action |
 |---|---|---|
-| Stick forward / back | Y (1) | Drive forward / backward |
-| Stick left / right | X (0) | Strafe left / right |
+| Stick forward/back | Y (1) | Drive forward/backward |
+| Stick left/right | X (0) | Strafe |
 | Stick twist | Twist (2) | Rotate in place |
-| Throttle slider | Slider (3) | Sets top translation speed live — **all the way back = fastest, all the way forward = slowest/safest** |
+| Throttle slider | Slider (3) | Top speed — back = fastest, forward = slowest |
 
-Driving is **field-centric**: forward on the stick always drives away from the driver station
-regardless of which way the robot is facing. This relies on the robot knowing which way is
-"forward" in the first place — the very first time the robot is enabled after powering on, it
-automatically treats whatever direction it's currently facing as forward, so make sure it's
-pointed away from the driver station before that first enable. Use the Recenter button
-(below) any time after that to redefine forward again, e.g. after it's been hand-placed at
-an angle.
+Field-centric: "forward" is whatever direction the robot faces on its first enable after power-on,
+or wherever it last faced when Recenter (button 7) was pressed.
 
 ### Buttons
 
 | Button | Name | Behavior |
 |---|---|---|
-| 1 | Trigger | **Hold** — lock the wheels in an X pattern (brake; resists being pushed). |
-| 2 | Target lock | Off by default at the start of every teleop period. **Tap** (under 1 second) to toggle on/off — spins in place looking for any AprilTag (fast for 15° at a time, then slower for 0.75s between each pulse — never a full stop — so the camera gets a steadier look), then auto-align rotation to it once seen, hands-free until tapped again. If the tag is lost while under 1 meter away, it's almost certainly just out of frame from being too close, not actually gone — target lock holds still instead of spinning off looking for a different one; see Force spin (button 3) to override that. **Hold** it instead to activate the same behavior only while held, exactly like a plain hold button — always ends off on release, even if it was already toggled on. You still steer translation with the stick either way; only rotation is taken over — except the twist axis, which while target lock is active mirrors buttons 3/4 once twisted past `kStickForceSpinThreshold` (25%), in whichever direction it's twisted: left behaves like Force spin (button 3) - momentary, back to normal the moment it's released - right behaves like Force spin clockwise (button 4) instead - it latches, continuing clockwise even after the stick's released, until a tag is genuinely (re)acquired. Both override an already-aligned target or a held-still close-up loss the same way the buttons do. Logs "Looking for April tags" while searching. Turns off automatically if the robot is disabled. |
-| 3 | Force spin | **Hold** — turns target lock on hands-free (same as tapping button 2) if it isn't already running, then, once target lock finds a tag it would normally stop spinning and smoothly align to it; holding this button instead forces the pulsed search spin to keep happening even though a tag is in view, as if none had been found. Also the only way to make target lock resume searching after it's held still for a lost close-up tag (see button 2). If target lock is currently suspended (see buttons 8/9 - released with no tag back in view yet), pressing this clears the suspension immediately and performs its usual search, instead of doing nothing until a tag reappears on its own. Releasing it goes straight back to aligning if a tag is still visible. Only button 2 can turn target lock back off — this button never disables it. |
-| 4 | Force spin (clockwise) | **Press** — a single tap is enough, it doesn't need to be held. Turns target lock on hands-free (same as tapping button 2) if it isn't already running, same as button 3, including clearing a suspension (see button 3) immediately instead of waiting for a tag to reappear. Forces the search to spin clockwise instead of the default counterclockwise, ignoring whatever tag's currently in view (even one target lock's already aligned to) — same as button 3's override, just spinning the other way, and overrides holding still for a lost close-up tag too. Once a tag's actually lost and then reacquired, it locks onto that tag normally. Press it again to re-arm the clockwise override. Any *later* search — from this button, button 3, or losing that tag naturally — defaults back to counterclockwise. Only button 2 can turn target lock back off — this button never disables it. |
-| 5 | Go home | **Press** — runs the steps in [`src/main/deploy/goHome.json`](src/main/deploy/goHome.json) (same instruction format as autonomous.json - see [Autonomous](#autonomous) below), teleop only. Cancels itself the instant you touch any other control - stick past its usual deadband, or any other button - handing the drivetrain straight back to normal driving instead of running to completion regardless of what you're doing. Takes over the stick completely while running, same as buttons 8/9/10. |
-| 7 | Recenter | **Press** — makes wherever the robot is currently facing the new "forward" for field-centric driving. Doesn't move the robot or change its tracked field position, just which way the stick's forward points from now on. Useful if the robot was hand-placed at an angle, or you want to redefine forward mid-match. Beeps afterward (same beep as an autonomous step finishing) as audible confirmation. |
-| 8 | Drive toward locked target | **Hold** — the held version of the autonomous "drive toward target" instruction: drives forward, correcting aim toward whichever AprilTag's in view the whole time it's visible, for as long as the button's held instead of a fixed distance. Takes over the stick completely (translation included) while held. Speed scales directly with distance to the tag: `kDriveTowardMinSpeedMps` (0.6 m/s floor, also used when no tag's in view yet since distance isn't known) plus distance times a gain that itself steps at 2 m away (`kDriveTowardNearDistanceMeters`) - `kDriveTowardFarGain` (1.0) past that, `kDriveTowardNearGain` (0.7) closer than that - capped at `kDriveTowardMaxSpeedPercent` (90%) of the drivetrain's true top speed (~5.85 m/s, so a ~5.3 m/s cap). Speed changes are ramped rather than instant (`kDriveTowardSlewMpsPerSec` — avoids spinning the wheels), starting from `kDriveTowardStartSpeedMps` (0.15 m/s) instead of a dead stop so it's already moving and correcting aim right away. Releasing it stops the robot; if target lock was on, it's suspended (not turned off) until an AprilTag's back in view, so it doesn't immediately spin off searching the instant you let go — once a tag's seen again it resumes normally on its own. If target lock was already off, releasing does nothing extra. Takes priority over buttons 9 and 10 if more than one is held. |
-| 9 | Drive away from locked target | **Hold** — the held version of the autonomous "drive away from target" instruction: drives backward at a fixed speed (`kDriveTowardBackupSpeedMps`), ramped up from `kDriveTowardStartSpeedMps` (0.15 m/s) instead of snapping straight there or starting from a dead stop (`kDriveTowardSlewMpsPerSec` — avoids spinning the wheels), correcting aim toward whichever AprilTag's in view the whole time it's visible, for as long as the button's held instead of a fixed distance. Takes over the stick completely (translation included) while held. Releasing it stops the robot; if target lock was on, it's suspended (not turned off) until an AprilTag's back in view, so it doesn't immediately spin off searching the instant you let go — once a tag's seen again it resumes normally on its own. If target lock was already off, releasing does nothing extra. If button 8 is also held, button 8 takes priority and this does nothing. |
-| 10 | Line up with locked target | **Hold** — the held version of the autonomous "align with april tag ... and go to it" instruction: searches for, then drives up to and squares up on, whichever tag is currently best-seen (the same tag target lock would align to), continuing to refine (or hold position once centered) for as long as it's held. Takes over the stick completely while held. Releasing it stops the robot immediately. If button 8 or 9 is also held, that one takes priority and this does nothing. |
+| 1 | Trigger | **Hold** — X-lock the wheels (brake). |
+| 2 | Target lock | **Tap** to toggle. Robot will continually lock on to targets while moving.  If target is lost, robot will spin in a pulse like movement (fast, slow, fast) to find another target. |
+| 3 | Force spin (CCW) | **Press** — burst of speed in a counterclockwise direction to look for new target.  Will enable target lock if not currently enabled. Same behavior when twisting axis past 25%. |
+| 4 | Force spin (CW) | **Press** — same as button 3, but in a clockwise rotation. |
+| 5 | Go home | **Press** — runs [`goHome.json`](src/main/deploy/goHome.json), teleop only. Cancels on any other stick/button input. |
+| 7 | Recenter | **Press** — sets current heading as new field-centric "forward". Beeps to confirm. |
+| 8 | Drive toward target | **Hold** — drive forward toward target while adjusting aim. |
+| 9 | Drive away from target | **Hold** — drive backward from target. |
+| 10 | Align with target | **Hold** — approach and align with the best-seen tag, refining while held. Loses priority to 8/9. |
+
 
 ### Autonomous
 
-Autonomous is scripted in [`src/main/deploy/autonomous.json`](src/main/deploy/autonomous.json) — a
-JSON array of plain-English instruction strings, run in order top to bottom. Editing it doesn't
-need a code change, just a redeploy (drag the file's content changes over with `./gradlew deploy`
-or the WPILib VS Code "Deploy Robot Code" command).
+Scripted in [`autonomous.json`](src/main/deploy/autonomous.json) — a JSON array of plain-English
+instructions run top to bottom, no code change needed to edit, just redeploy.
 
-[`src/main/deploy/goHome.json`](src/main/deploy/goHome.json) uses this exact same instruction
-format/parser, but isn't autonomous - it's button 5's teleop "go home" macro (see the button table
-above), a completely separate script/trigger.
-
-Example:
+Additional script files can be added and bound to other buttons — 
+[`goHome.json`](src/main/deploy/goHome.json) is a current example that utilizes button 5 during teleop mode.
 
 ```json
 [
   "drive forward 3 feet",
   "wait 1 seconds",
   "rotate 90 degrees",
-  "drive right 2 feet",
   "align with april tag 4"
 ]
 ```
 
-**Supported instructions** (not case-sensitive):
+**Instructions** (case-insensitive):
 
-| Instruction | Example | Notes |
-|---|---|---|
-| `drive <forward\|backward\|left\|right> <number> feet` | `drive forward 3 feet` | Distance is measured from odometry, not timed — accurate regardless of battery voltage or carpet friction. `foot`/`feet` both work. Direction is robot-relative (whichever way the robot is facing when the step starts), not field-relative. |
-| `drive toward target <number> feet` | `drive toward target 5 feet` | Drives forward (robot-relative, whichever way the robot's currently facing). Meant to follow a `rotate` step that aimed the robot roughly at a target: while any AprilTag is in view (not a specific ID - whichever one's currently seen) it corrects aim toward it as it drives, same as `align with april tag`'s rotation correction; once the tag goes out of view (e.g. too close for the camera to see the whole thing) it stops correcting and just keeps driving straight for the rest of the distance, rather than searching for it. `toward`/`towards` both work. |
-| `drive away from target <number> feet` | `drive away from target 5 feet` | Same as `drive toward target`, but backward — simply reverses the wheel direction rather than re-pointing them, same relationship as `drive backward` to `drive forward`. Still corrects aim toward whichever AprilTag is in view the whole time, even while backing away from it, using the same rules as `drive toward target` for when it stops correcting. |
-| `rotate <number> degrees` | `rotate 90 degrees` | Turns in place. A bare number is signed: positive = counterclockwise, negative = clockwise (matches the rest of the codebase's convention). You can instead say the direction explicitly, either before or after the number: `rotate left/right/clockwise/counterclockwise <number> degrees` or `rotate <number> degrees left/right/clockwise/counterclockwise`. `degree`/`degrees` both work. |
-| `wait <number> seconds` | `wait 1.5 seconds` | Just sits still. `second`/`seconds` both work. |
-| `align with april tag <number>` | `align with april tag #4` | Spins (in the same fast/slow pulse pattern as target lock) to search for that specific AprilTag ID, then turns to face it. Also accepts `align to april tag 4` (with or without the `#`). Gives up after a few seconds if the tag is never found, so a missing tag can't stall the rest of the script. |
-| `align with april tag <number> and go to it` | `align with april tag 1 and go to it` | Spins to search for that specific AprilTag ID (same as `align with april tag`), then drives at it until it's about 1 meter away - fast while there's real ground to cover, slowing down within 2 meters of the tag so the final approach doesn't come in too hot to fine-tune alignment. While still approaching, it aims at the tag's center and nudges sideways toward square; once stopped, it switches to correcting squareness by rotating and centering by strafing directly, rather than only aiming at the tag's center. "Centered" is judged from the tag's own pose, not just yaw, against targets measured on the actual robot (the camera isn't mounted perfectly square/centered, so dead-on doesn't read as exactly 180°/0). Gives up after a few seconds if it never gets there, so a missing tag can't stall the rest of the script. Tunable in `AutoConstants` (`kLineUp*`). Also accepts `align to april tag <number> and go to it`. |
-| `recenter` | `recenter` | Same as button 7 - makes wherever the robot is currently facing the new "forward" for field-centric driving. Doesn't move the robot or change its tracked field position, just which way "forward" points from then on for any `drive`/`drive toward`/`drive away` steps after it. |
-| `vision rotation test` | `vision rotation test` | A diagnostic step, not a real match instruction - see [Vision rotation test](#vision-rotation-test) below. Usually the only thing in the script while it's there, since it doesn't return control until it's completely done. |
-| `play beep <number> times` | `play beep 3 times` | Plays the same beep normally played after a step finishes (tone/duration tunable via `kStepCompleteBeepHz`/`kStepCompleteBeepSeconds`, same as always), back to back this many times. Always plays, even if `kStepCompleteBeepEnabled` is `false` - the whole point of this step is to beep - but doesn't also get the normal automatic trailing beep after it, so it's not one extra time on top. `time`/`times` both work. |
+| Instruction | Notes |
+|---|---|
+| `drive <forward\|backward\|left\|right> <n> feet` | Odometry-based, robot-relative. |
+| `drive toward target <n> feet` | Drives forward, correcting aim at any visible tag until it's out of frame, then straight. |
+| `drive away from target <n> feet` | Same, backward. |
+| `rotate <n> degrees [clockwise\|counterclockwise]` | Spin the robot a certain degrees (slightly inaccurate, so adjust as needed) |
+| `wait <n> seconds` | Pause. |
+| `align with april tag <n>` | Searches for that specific tag ID, faces it, gives up after a timeout. |
+| `align with april tag <n> and go to it` | Same as above, but will arrive within 1m of target. |
+| `recenter` | Same as button 7. |
+| `vision rotation test` | Diagnostic — see below. |
+| `play beep <n> times` | Plays the step-complete beep back to back. |
 
-A line that's blank, or starts with `#` or `//` (leading whitespace is fine), is a comment and is
-skipped — handy for disabling a step without deleting it.
-
-If a line doesn't match one of these exactly (and isn't a comment), **the whole file is rejected**
-(logged to the RioLog console with the exact bad line) and autonomous does nothing that run,
-rather than guessing at a typo and running a partial or wrong script.
-
-Each step beeps once it finishes, played through one of the drivetrain's own Kraken motors (no
-extra speaker hardware needed) — tone and duration are tunable via `kStepCompleteBeepHz`/
-`kStepCompleteBeepSeconds` in `AutoConstants`. Set `kStepCompleteBeepEnabled` to `false` there to
-skip the beep entirely (not just silence it) and speed up cycle times, since every step normally
-waits for its beep to fully finish before the next one starts. Once every step in the script is
-done, `play beep 4 times` runs automatically regardless of `kStepCompleteBeepEnabled`, so the
-whole script finishing is audibly distinct from just one step finishing - this applies to any
-automation script (this one, [`goHome.json`](#buttons) via button 5, or any future one), not just
-autonomous.json.
-
-All the speeds/tolerances used above (drive speed, rotate speed, align tolerance, align timeout)
-are tunable in `AutoConstants` in [`Constants.java`](src/main/java/frc/robot/Constants.java) — the
-script only controls direction/distance/angle/tag ID, not speed.
-
-New instruction types are added in [`AutoScript.java`](src/main/java/frc/robot/AutoScript.java)
-(the text parser) and [`AutoStep.java`](src/main/java/frc/robot/AutoStep.java) (the parsed data),
-with the actual robot behavior for each wired up in `RobotContainer.autoStepCommand()`.
+Blank lines or lines starting with `#`/`//` are comments. Any non-matching line rejects the whole
+file (logged to RioLog) — no partial/guessed runs. Each step beeps on completion (Kraken motor,
+no speaker hardware); tunable/disableable via `kStepCompleteBeep*` in `AutoConstants`. The whole
+script finishing always plays 4 beeps, regardless of that setting to indicate the sequence is complete.
 
 #### Vision rotation test
 
-The `vision rotation test` instruction is a diagnostic for finding how fast the robot can spin
-while still reliably seeing AprilTags. Set the field up with tags visible from wherever the robot
-starts, put `vision rotation test` in `autonomous.json`, then run autonomous like normal (a match
-isn't needed - works fine standalone in the autonomous period).
+Diagnostic for finding max reliable spin rate for AprilTag detection. Put `vision rotation test`
+alone in `autonomous.json` and run autonomous. Spins increasingly fast 360° sweeps (steady-rate,
+then pulsed), logging unique tags seen per sweep to RioLog, until the count drops or top speed is
+hit — then logs the best sequence.
 
-It runs a series of full 360° rotations, each faster than the last, counting how many *unique*
-tag IDs came into view during each one, logging the duration and count to the RioLog console
-after every rotation. All other routine console logging (target lock, "April Tags in view",
-etc.) is silenced for the whole test so only these result lines show up - restored automatically
-once the test ends, however it ends:
+## Driver-feel & traction control
 
-1. **Steady-speed sequences** — spin at one constant rate, starting at 0.5 rad/s (0.1 turned out
-   to be too far below the wheels' static friction threshold to actually move at all). As long as
-   the tag count doesn't drop from the previous sequence, repeats with the speed increased by
-   another 0.1 rad/s. Once it drops (or the speed maxes out at the drivetrain's actual top turn
-   rate), moves on to...
-2. **Pulse sequences** — same idea, but spinning in target lock's fast/slow pulse pattern instead
-   of one steady rate, starting at 1.0 rad/s fast / 0.5 rad/s slow and increasing both by 0.5/0.1
-   rad/s each time. Ends the whole test once the tag count drops here too (or the fast speed maxes
-   out).
-
-The console logs a line the instant each sequence starts, not just once it finishes, so it's
-clear the test is progressing even during a slow rotation. Once the whole test ends (either way),
-it logs the single best sequence seen across the entire run - whichever one saw the most unique
-tags, using duration as a tiebreaker if more than one sequence tied for the top tag count. Before
-every measured rotation, the robot first spins slowly until no tag is in view (or 10 seconds pass,
-in case a tag's visible from every angle), so each measurement starts from the same clean state.
-All the starting speeds/increments are tunable in `RotationTestConstants` in
-[`Constants.java`](src/main/java/frc/robot/Constants.java).
-
-## Driver-feel details
-
-These are all tunable in [`Constants.java`](src/main/java/frc/robot/Constants.java) under
-`OperatorConstants`:
-
-- **Deadband** — stick deflection below ~10% produces no output (translation and rotation).
-- **Response curve** — above the deadband, output is `stickFraction ^ 2.0`, softening low-speed
-  response for finer control while full deflection still reaches top speed.
-- **Throttle slider** — scales the translation top speed between 5% and 100% of the drivetrain's
-  true top speed.
-- **Minimum output floor** — once past the deadband, translation is floored to ~5% of true top
-  speed so the wheels always move usefully (clamped so it never exceeds the slider's current cap).
-- **Input smoothing** — a slew-rate limiter on each axis filters flight-stick pot noise to stop
-  steer-motor chatter.
-
-## Traction control
-
-Every drive command - teleop stick driving, buttons 8/9/10, and every autonomous step - passes
-through an "electronic limited slip differential" (`TractionControl`, applied centrally in
-`CommandSwerveDrivetrain.setControl()`, not wired up separately at each call site) that backs off
-commanded speed when a wheel or the whole chassis isn't actually achieving what was asked of it -
-almost always because a wheel lost traction and is just spinning, rather than the drivetrain
-genuinely being too slow. Two independent checks:
-
-- **Per-wheel (translation)** — each wheel's actual measured speed is compared only against its
-  own last commanded target, never against the other wheels (swerve wheels are supposed to run at
-  different speeds during any turn - that's normal kinematics, not slip). If a wheel's actual
-  speed exceeds its own target by more than `kTranslationSlipRatio`, the whole commanded
-  translation speed is scaled down by that wheel's ratio times `kTranslationCorrectionAggressiveness`
-  (cutting harder than the bare minimum needed to match the slipping wheel), floored at
-  `kMinTranslationCorrectionScale` so one noisy reading can't stall the drivetrain outright.
-- **Whole-chassis (rotation)** — the Pigeon 2's actual measured yaw rate (ground truth, independent
-  of the wheel encoders odometry itself is built from) is compared against the commanded
-  rotational rate. If it's persistently (`kRotationSlipDebounceSeconds` - long enough to rule out
-  ordinary spin-up, which also briefly lags the commanded rate) behind by more than
-  `kRotationSlipRatio`, the commanded rotational rate is scaled down by `kRotationCorrectionScale`.
-
-All tunable in `TractionConstants` in
-[`Constants.java`](src/main/java/frc/robot/Constants.java). Doesn't apply to `Idle`,
-`SwerveDriveBrake`, or the SysId characterization requests - only the `FieldCentric`/`RobotCentric`
-requests used for actual driving.
+- **Deadband** ~10%; response curve `stickFraction^2` above it; minimum output floor ~5% of top
+  speed once past deadband; slew-rate input smoothing to prevent steer-motor chatter.
+- **Traction control** `TractionControl` backs off commanded speed when a wheel or the whole
+  chassis isn't achieving what was asked — per-wheel translation slip (compared to that wheel's
+  own target) and whole-chassis rotation slip (Pigeon 2 yaw rate vs. commanded rate). 
 
 ## Vision
 
-A single PhotonVision camera (named **`OV9281_April_Tags`** in the PhotonVision UI) provides
-AprilTag targets. Yaw readings are latency-compensated against the robot's odometry history so alignment
-doesn't overshoot on stale frames. When no tag is in view, the robot searches by alternating
-fast/slow spin pulses (never a full stop) instead of spinning continuously at one speed - set
-`kSearchPulseEnabled` to `false` to spin at one steady rate instead. Alignment PID gains and the
-search pulse's speeds/degrees/duration live in `VisionConstants` in
-[`Constants.java`](src/main/java/frc/robot/Constants.java).
+PhotonVision cameras provide AprilTag targeting. In combination with target lock, the robot will 
+continually stay in alignment with an apriltag.  If the current tag is no longer seen, it the robot will
+spin in search of another tag.
 
-### Driver camera
-
-A Logitech C920 plugged directly into the roboRIO's own USB port streams to the Driver Station as
-a plain video feed for the human driver — separate from the PhotonVision cameras above, which are
-for vision processing, not for a person to look at. It shows up automatically in the Driver
-Station's camera tab (or a Camera Stream widget in Shuffleboard/Elastic), no extra setup needed.
-Kept to a low resolution/fps (set in [`Robot.java`](src/main/java/frc/robot/Robot.java)) since
-match radio bandwidth is limited and shared with everything else the robot sends.
+A Logitech C920 on the roboRIO's own USB port streams a plain driver-view feed to the Driver
+Station (separate from the PhotonVision cameras) — low res/fps to save radio bandwidth.
 
 ## Project layout
 
 | File | Purpose |
 |---|---|
-| [`RobotContainer.java`](src/main/java/frc/robot/RobotContainer.java) | Subsystems, button bindings, driving/align math, autonomous command building. |
-| [`PulsedSearch.java`](src/main/java/frc/robot/PulsedSearch.java) | Fast/slow pulsed search-spin pattern - shared by target lock, "align with april tag", and the rotation test. |
-| [`VisionRotationTest.java`](src/main/java/frc/robot/VisionRotationTest.java) | Builds the "vision rotation test" diagnostic step. |
-| [`Constants.java`](src/main/java/frc/robot/Constants.java) | Tunable operator, vision, and autonomous constants. |
-| [`AutoScript.java`](src/main/java/frc/robot/AutoScript.java) | Parses a script file (`deploy/autonomous.json`, `deploy/goHome.json`) into `AutoStep`s. |
-| [`AutoStep.java`](src/main/java/frc/robot/AutoStep.java) | The parsed autonomous instruction types. |
-| [`deploy/autonomous.json`](src/main/deploy/autonomous.json) | The autonomous script itself — edit this, not code. |
-| [`deploy/goHome.json`](src/main/deploy/goHome.json) | Button 5's teleop "go home" script — same format as autonomous.json. |
-| [`subsystems/Vision.java`](src/main/java/frc/robot/subsystems/Vision.java) | PhotonVision camera wrapper. |
-| [`subsystems/CommandSwerveDrivetrain.java`](src/main/java/frc/robot/subsystems/CommandSwerveDrivetrain.java) | CTRE swerve drivetrain - also where traction control is applied (`setControl()`). |
-| [`subsystems/TractionControl.java`](src/main/java/frc/robot/subsystems/TractionControl.java) | Per-wheel and whole-chassis slip correction - see [Traction control](#traction-control) above. |
-| [`generated/TunerConstants.java`](src/main/java/frc/robot/generated/TunerConstants.java) | Swerve hardware config (CAN IDs, gear ratios, offsets). |
-| [`Robot.java`](src/main/java/frc/robot/Robot.java) | Mode lifecycle + scheduler. |
+| [`RobotContainer.java`](src/main/java/frc/robot/RobotContainer.java) | Central wiring class — builds the drivetrain/vision subsystems, binds every flight-stick control (drive, target lock, force-spin, hold-to-drive-toward/away/line-up buttons, recenter, go home), and constructs the autonomous command from `AutoScript`/`AutoStep`. Holds most of the actual driving logic: stick shaping, field- vs. robot-centric requests, AprilTag alignment math, and the command builders that turn each parsed instruction into a runnable `Command`. Also owns the target-lock state machine (toggle vs. hold, suspension, forced-clockwise latching) and the shared step-complete beep commands. |
+| [`PulsedSearch.java`](src/main/java/frc/robot/PulsedSearch.java) | Turns a continuous search spin into alternating fast/slow pulses so the camera gets steadier looks at AprilTags instead of only seeing them blur past. Reset once when a search starts, then polled every loop via `pulse()` for the current commanded rate; can fall back to one steady rate if pulsing is disabled in `Constants`. Shared by target lock, the `align with april tag` instructions, and `VisionRotationTest`. |
+| [`VisionRotationTest.java`](src/main/java/frc/robot/VisionRotationTest.java) | Implements the `vision rotation test` diagnostic step — not used in matches, just for finding how fast the robot can spin while still reliably seeing tags. Runs increasingly fast 360° sweeps (steady-rate, then `PulsedSearch`'s pulsed pattern), logging unique tag count and duration per sweep and stopping a phase once the count drops or top turn rate is hit. Silences routine console logging during the run and reports the single best sequence at the end. |
+| [`Constants.java`](src/main/java/frc/robot/Constants.java) | All of the robot's tunable numbers/flags, grouped into nested classes: `OperatorConstants` (axis/button mapping, deadbands, curves), `VisionConstants` (alignment PID gains, search-spin timing), `AutoConstants` (speeds/tolerances/timeouts per instruction type), `RotationTestConstants`, and `TractionConstants` (slip thresholds/correction gains). Pure data, no logic — several values carry comments documenting when/why they were tuned on the real robot. |
+| [`AutoScript.java`](src/main/java/frc/robot/AutoScript.java) | Parses a JSON array of plain-English instruction strings (`autonomous.json`/`goHome.json`) into `AutoStep`s using one regex per supported instruction. Comment/blank lines are skipped; any unrecognized line rejects the whole file (logged via `RobotLog`) rather than running a partially-parsed script, so a typo can't silently truncate a routine. |
+| [`AutoStep.java`](src/main/java/frc/robot/AutoStep.java) | A sealed interface with one record type per supported instruction (`Drive`, `DriveToward`, `Rotate`, `AlignTag`, `LineUpTag`, `PlayBeep`, etc.), each holding just the data needed to run it. `AutoScript` produces these from parsed text, and `RobotContainer.autoStepCommand` pattern-matches on them to build the actual `Command`. |
+| [`deploy/autonomous.json`](src/main/deploy/autonomous.json) | The deployed match autonomous script, parsed by `AutoScript`/`AutoStep`. The active routine aligns to and drives up to three AprilTags in sequence with waits/backups between each, then recenters and does a small rotation wiggle; the rest of the file is commented-out reference lines showing every supported instruction format. |
+| [`deploy/goHome.json`](src/main/deploy/goHome.json) | Button 5's teleop "go home" script, same format as `autonomous.json`, run via `RobotContainer.goHomeCommand()`. Beeps, aligns to and drives up to a specific AprilTag, rotates to a set heading, and recenters — cancels itself immediately if the driver touches any other control. |
+| [`subsystems/Vision.java`](src/main/java/frc/robot/subsystems/Vision.java) | Wraps a single PhotonVision camera, caching the best-seen AprilTag target and the full list of visible targets once per periodic loop so every consumer sees a consistent result within that loop. Exposes helpers for whether a tag's in view, looking one up by fiducial ID, the best target's yaw/distance/timestamp, and the set of visible IDs — logging to console whenever that set changes. |
+| [`subsystems/CommandSwerveDrivetrain.java`](src/main/java/frc/robot/subsystems/CommandSwerveDrivetrain.java) | The swerve drivetrain subsystem, generated from CTRE's Tuner X template and extended with SysId characterization, alliance-based operator-perspective handling, and simulation support. Its key customization overrides `setControl` to route every `FieldCentric`/`RobotCentric` drive request through `TractionControl` before handing it to the underlying CTRE swerve control, leaving non-drive requests (Idle, brake, SysId) untouched. |
+| [`subsystems/TractionControl.java`](src/main/java/frc/robot/subsystems/TractionControl.java) | An "electronic limited slip differential" applied automatically to every drive command via `CommandSwerveDrivetrain.setControl`. `correctTranslation` scales commanded velocity down based on the worst-slipping wheel's actual-vs-target speed ratio; `correctRotation` scales down commanded rotation when the gyro's measured yaw rate persistently lags the commanded rate — both log once when slip starts/stops rather than every loop. |
+| [`generated/TunerConstants.java`](src/main/java/frc/robot/generated/TunerConstants.java) | Generated/adapted swerve hardware config for the four SDS Mk5n modules — CAN IDs, gear ratios, wheel radius, inversions, encoder offsets, PID/feedforward gains, and current limits. Also defines the `TunerSwerveDrivetrain` base class and the `createDrivetrain()` factory `RobotContainer` uses to build the `CommandSwerveDrivetrain`. |
+| [`Robot.java`](src/main/java/frc/robot/Robot.java) | The top-level `TimedRobot` subclass WPILib calls into for each mode. On construction it prunes old SignalLogger session folders, starts streaming the USB driver camera to the Driver Station, and instantiates `RobotContainer`; `robotPeriodic` runs the `CommandScheduler`, and the mode-init methods schedule/cancel the autonomous command and clear commands entering test mode. |
 
-## Build & deploy
+## Hardware
 
-Uses the WPILib toolchain (bundled JDK). From the WPILib VS Code extension, or on the command line:
+**Team 4296.**
 
-```sh
-./gradlew build      # compile + tests
-./gradlew deploy     # build and deploy to the roboRIO (robot must be connected)
-./gradlew simulateJava   # run in simulation
-```
+- **[roboRIO v1](https://firstwiki.github.io/wiki/roborio)** — main robot controller (too weak to
+  run AprilTag detection itself).
+- **[OrangePi 5](http://www.orangepi.org/html/hardWare/computerAndMicrocontrollers/details/Orange-Pi-5.html)**
+  coprocessor running [PhotonVision](http://10.42.96.11:5800/#/dashboard), two cameras plugged
+  directly into its own USB ports (no hub):
+  - **[Arducam OV9281](https://www.arducam.com/blog/product/arducam-1mp-ov9281-global-shutter-usb-camera-board-with-low-distortion-m12-lens-dual-microphones-uvc-usb2-0-webcam-module-for-computer-laptop-android-device-and-raspberry-pi-ub0232/)**
+    (global shutter) — AprilTags, named `OV9281_April_Tags` in PhotonVision.
+  - **[Arducam OV9782](https://www.arducam.com/100fps-global-shutter-color-usb-camera-board-1mp-ov9782-uvc-webcam-module-with-low-distortion-m12-lens-without-microphones-for-computer-laptop-android-device-and-raspberry-pi-arducam.html)**
+    — object detection (RKNN models on the RK3588S NPU), nicknamed `OV9782_Object_Detection` in
+    PhotonVision. Not yet wired into robot code.
+  - **[Pololu D24V50F5](https://www.pololu.com/product/2851)** for power which provides a 12V to
+    5V/5A step-down regulator, fed by PoE from the VH-109 radio.
+- **[Logitech C920](https://www.logitech.com/en-us/products/webcams/c920s-pro-hd-webcam.html)** —
+  plain driver-view webcam on the roboRIO's own USB port (not a vision camera).
+- **[Thrustmaster T.16000M](https://www.thrustmaster.com/en-us/products/t-16000m-fcs/)** flight
+  stick — driver controller, Driver Station USB port 0.
+- **[Vivid-Hosting VH-109](https://frc-radio.vivid-hosting.net/)** radio (1 PoE uplink + 4 LAN).
+  Static IPs: roboRIO `10.42.96.2`, OrangePi `10.42.96.11`.
+- **[REV Power Distribution Hub](https://www.revrobotics.com/rev-11-1850/) (REV-11-1850)** — power
+  delivery from the main battery, CAN-connected. 20 high-current channels (40A max each), 3
+  low-current channels (15A continuous/20A peak), 1 switchable low-current channel for indicators.
+- **[REV Mini Power Module](https://www.revrobotics.com/rev-11-1956/) (REV-11-1956)** — expansion
+  module off the PDH for powering peripherals/custom circuits. 6 channels, 15A each (40A total),
+  12V nominal input, ATM fuses.
+- **Swerve drivetrain** — **[SDS Mk5n](https://www.swervedrivespecialties.com/products/mk5n-swerve-module)**
+  modules, all on the roboRIO onboard CAN bus:
+  - **[Kraken X60](https://store.ctr-electronics.com/products/kraken-x60)** — drive motor (CAN IDs 4–7).
+  - **[Kraken X44](https://store.ctr-electronics.com/products/kraken-x44)** — steer motor (CAN IDs 0–3).
+  - **[CTRE CANcoder](https://store.ctr-electronics.com/products/cancoder)** — azimuth encoder, one
+    per module (CAN IDs 11–14).
+  - **[CTRE Pigeon 2](https://store.ctr-electronics.com/products/pigeon-2)** — gyro (CAN ID 20).
+- Frame 14.5 in × 12.75 in, wheelbase/trackwidth 9 in × 7.25 in, 4 in wheels, measured top speed
+  ~5.85 m/s at 12V.
+
+## Miscellaneous hardware
+
+- 2x4 wood
+- 5/8" particle board
+- **[5-Gallon Paint Bucket Grid](https://www.harborfreight.com/5-gallon-paint-bucket-grid-57370.html)**
+- **[1" Roller Ball Bearing](https://www.harborfreight.com/1-inch-roller-ball-bearing-67060.html)**
+- **[Storage Crate](https://www.target.com/p/storage-crate-black-room-essentials-8482/-/A-75666888)**
+- Pool noodles
+
+## Images
+
+<img src="docs/images/IMG_1345.jpeg" width="300" alt="IMG_1345">
+<img src="docs/images/IMG_1346.jpeg" width="300" alt="IMG_1346">
+<img src="docs/images/IMG_1347.jpeg" width="300" alt="IMG_1347">
+<img src="docs/images/IMG_1348.jpeg" width="300" alt="IMG_1348">
+<img src="docs/images/IMG_1349.jpeg" width="300" alt="IMG_1349">
+<img src="docs/images/IMG_1350.jpeg" width="300" alt="IMG_1350">
+<img src="docs/images/IMG_1355.jpeg" width="300" alt="IMG_1355">
+<img src="docs/images/IMG_1351.jpeg" width="300" alt="IMG_1351">
+<img src="docs/images/IMG_1353.jpeg" width="300" alt="IMG_1353">
+<img src="docs/images/IMG_1352.jpeg" width="300" alt="IMG_1352">
+<img src="docs/images/IMG_1356.jpeg" width="300" alt="IMG_1356">

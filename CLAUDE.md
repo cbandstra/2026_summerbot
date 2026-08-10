@@ -47,12 +47,12 @@ JAVA_HOME="/c/Users/Public/wpilib/2026/jdk" ./gradlew compileJava --offline   # 
 - Radio: **Vivid-Hosting VH-109** (1 PoE uplink + 4 LAN ports). roboRIO and OrangePi each plug into
   a LAN port (roboRIO v1 has only one Ethernet port, used for the radio uplink).
 - Static IPs: **roboRIO `10.42.96.2`**, **OrangePi `10.42.96.11`** (team `10.TE.AM.x` subnet).
-- OrangePi is powered via a 12V→5V buck regulator off a PDP/PDH breaker, not off roboRIO/radio power.
+- OrangePi is powered via a 12V→5V buck regulator fed by PoE from the VH-109 radio.
 - PhotonVision SSH default creds: user `pi`, password `raspberry`.
 
 ### Drivetrain (see [`generated/TunerConstants.java`](src/main/java/frc/robot/generated/TunerConstants.java))
 - Swerve: SDS **Mk5n** modules — **Kraken X60** drive, **Kraken X44** steer, CTRE **CANcoder**
-  azimuth encoder, CTRE **Pigeon 2** gyro. All on the roboRIO onboard CAN bus (no CANivore).
+  azimuth encoder, CTRE **Pigeon 2** gyro. All on the roboRIO onboard CAN bus.
 - CAN ID convention: steer motors 0–3, drive motors 4–7, CANcoders 11–14, Pigeon 20.
 - Measured top speed ~5.85 m/s at 12 V. Wheelbase/trackwidth 19.75 in × 19.75 in, 4 in wheels.
 - **Note:** `createDrivetrain()` currently instantiates only two modules (FrontRight + BackLeft) —
