@@ -145,8 +145,8 @@ Station (separate from the PhotonVision cameras) — low res/fps to save radio b
   - **[Arducam OV9782](https://www.arducam.com/100fps-global-shutter-color-usb-camera-board-1mp-ov9782-uvc-webcam-module-with-low-distortion-m12-lens-without-microphones-for-computer-laptop-android-device-and-raspberry-pi-arducam.html)**
     — object detection (RKNN models on the RK3588S NPU), nicknamed `OV9782_Object_Detection` in
     PhotonVision. Not yet wired into robot code.
-  - **[Pololu D24V50F5](https://www.pololu.com/product/2851)** for power which provides a 12V to
-    5V/5A step-down regulator, fed by PoE from the VH-109 radio.
+  - **[Pololu S13V30F5](https://www.pololu.com/product/4082)** for power which provides a 12V to
+    5V/3A step-down regulator, fed by PoE from the VH-109 radio.
 - **[Logitech C920](https://www.logitech.com/en-us/products/webcams/c920s-pro-hd-webcam.html)** —
   plain driver-view webcam on the roboRIO's own USB port (not a vision camera).
 - **[Thrustmaster T.16000M](https://www.thrustmaster.com/en-us/products/t-16000m-fcs/)** flight
